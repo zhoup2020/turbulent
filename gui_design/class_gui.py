@@ -383,6 +383,7 @@ class TurbulentAnalysisApp:
                     coords={"time": df.index, "height": df.columns},
                     name=task_info
                 )
+
                 da.to_netcdf(out_path)
             else:
                 messagebox.showwarning("未知格式", f"不支持的文件后缀：{ext}")
