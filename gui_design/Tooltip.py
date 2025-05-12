@@ -8,6 +8,7 @@ class Tooltip:
         self.widget.bind("<Enter>", self.show_tip)
         self.widget.bind("<Leave>", self.hide_tip)
 
+
     def show_tip(self, event=None):
         """显示提示"""
         if self.tip_window:
