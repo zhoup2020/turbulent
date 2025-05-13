@@ -3,7 +3,7 @@ import pandas as pd
 import glob
 import time
 import re
-from Quadrant_analysis import quan
+from .Quadrant_analysis import quan
 
 def custom_sort_key(path):
     category = path.split('\\')[-1][0]  # 提取 A, B, C
