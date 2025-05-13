@@ -20,5 +20,6 @@ The gui_design module is used to create the GUI page, the icons module is the ic
 ## 3.Frequently Asked Questions  
 File format problems, this software is based on meteorological tower observation data research for development, did not take into account all the file reading situation. If you encounter file format problems, you can directly modify the source code.  
 ## 4.Technical Support  
-Contact details:pzhou6804@gmail.com or zhoup2020@outlook.com
-Author：Ping Zhou
+Contact details:pzhou6804@gmail.com or zhoup2020@outlook.com  
+Author：Ping Zhou  
+Supervisor：Zhongming Gao
