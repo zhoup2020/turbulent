@@ -3,13 +3,13 @@ import pycwt as wavelet
 from scipy import signal
 
 
-def wavelet_mapping(x):
-    t = np.arange(0, 18000, 1) * 0.1
-    dt = 0.1
+def wavelet_calculate(x,dt,dj,J):
+    t = np.arange(0, len(x), 1) * dt
+    dt = dt
     mother = wavelet.Morlet(6)
     s0 = 2 * dt  # Starting scale, in this case 2 * timestep (default = 0.1 s)
-    dj = 1 / 10  # The scale resolution
-    J = 10 / dj  # The number of scales
+    dj = dj  # The scale resolution
+    J = J  # The number of scales
 
     dat = signal.detrend(x.values, type='linear')
     N = dat.size

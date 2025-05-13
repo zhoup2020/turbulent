@@ -1,25 +1,29 @@
 import time
 from datetime import datetime
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog,simpledialog
 from tkinter.colorchooser import askcolor
 from PIL import Image, ImageTk
 import os
 import numpy as np
 import pandas as pd
 import string
+import re
 import xarray as xr
+from tkcalendar import DateEntry
 from scipy.interpolate import interp1d
 from scipy.stats import gaussian_kde
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.font_manager as fm
-from readfiles import read_single_nc, read_and_merge_ncs, read_single_csv_or_dat, read_and_merge_csvs_or_dats
-from dat_to_nc import dat_nc, save_to_nc
-from correlation_tur12 import calculate_corr
-from deltaS0 import read_datfiles
-from High_low_freq import high_low_freq
+import matplotlib.colors as mpl_colors
+from Tooltip import Tooltip
+from Firetree import EnhancedFileTree
+from Fileviwer import EnhancedFileViewer
+from Workspace import WorkspaceViewer
+from tur_dattonc import read_single_nc, read_and_merge_ncs, read_single_csv_or_dat, read_and_merge_csvs_or_dats, wavelet_calculate,dat_nc, save_to_nc,calculate_corr,read_datfiles,high_low_freq
+
 
 
 class TurbulentAnalysisApp:
@@ -381,12 +385,11 @@ class TurbulentAnalysisApp:
                     data=df.values,
                     dims=("time", "height"),
                     coords={"time": df.index, "height": df.columns},
-                    name=task_info
+                    name='corr'
                 )
-
                 da.to_netcdf(out_path)
             else:
-                messagebox.showwarning("未知格式", f"不支持的文件后缀：{ext}")
+                messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
         except Exception as e:
             messagebox.showerror("保存失败", str(e))
             return
@@ -402,7 +405,7 @@ class TurbulentAnalysisApp:
                       ("t_start", "Start time (HH:mm:SS):", ""),
                       ("t_end", "End time (HH:mm:SS):", ""),
                       ("timestep", "Timestep (s):", ""),
-                      ("out_path", "Save file Path:", ""), ("d_exclude", "Exclude date:", ""),
+                      ("d_exclude", "Exclude date:", ""),
                       ("vars", "Variabel name:", ""), ("height", "Height (m):", "")]
         self._build_form(form_frame, parameters, 'deltaS', start_row=0, command1=self._create_collect_deltaSparameter,
                          command2=lambda: self.on_save("deltaS"), command3=lambda: self.show_plot_ds_settings("deltaS"))
@@ -413,7 +416,7 @@ class TurbulentAnalysisApp:
             params_collect = self.form_params['deltaS']
             params = {}
             messagebox.showinfo("成功", "参数已保存！")
-            for key in ["path", "d_start", "d_end", "t_start", "t_end", "out_path"]:
+            for key in ["path", "d_start", "d_end", "t_start", "t_end"]:
                 params.update({key: params_collect[key].get()})
             params.update({"hole": float(params_collect["hole"].get()),
                            "timestep": float(params_collect["timestep"].get()),
@@ -460,7 +463,7 @@ class TurbulentAnalysisApp:
                 ds = xr.Dataset(dict_ds)
                 ds.to_netcdf(out_path)
             else:
-                messagebox.showwarning("未知格式", f"不支持的文件后缀：{ext}")
+                messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
         except Exception as e:
             messagebox.showerror("保存失败", str(e))
             return
@@ -540,7 +543,7 @@ class TurbulentAnalysisApp:
             params_collect = self.form_params['quan']
             params = {}
             messagebox.showinfo("成功", "参数已保存！")
-            for key in ["tur1", "tur2", "out_path", "time_seg", "timestep", "start_time", "end_time"]:
+            for key in ["time_seg", "timestep", "start_time", "end_time"]:
                 params.update({key: params_collect[key].get()})
             params.update({"hole": int(params_collect["hole"].get())})
             params.update({"vars": params_collect["vars"].get().split(',')})
@@ -587,6 +590,7 @@ class TurbulentAnalysisApp:
             self.run_analysis('calculate_quan', time0, time1, e)
 
     def _create_save_quanfile(self, out_path, fmt):
+        time0 = time.time()
         try:
             data = self.plot_data['quan']
             dict_df = {}
@@ -608,30 +612,17 @@ class TurbulentAnalysisApp:
                 ds = xr.Dataset(dict_ds)
                 ds.to_netcdf(out_path)
             else:
-                messagebox.showwarning("未知格式", f"不支持的文件后缀：{ext}")
+                messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
         except Exception as e:
+            time1 = time.time()
             messagebox.showerror("保存失败", str(e))
+            self.run_analysis('save_quan', time0, time1, e)
             return
-
-        try:
-            data = self.plot_data['quan']
-            dict_df = {}
-            for key in data.keys():
-                dict_df.update({key: data[key]})
-            df = pd.concat(dict_df, axis=1)
-            self._on_calc_corr(df, 'quan')
-            time1 = time.time()
-            self.run_analysis('save_quadrant_analysis', time0, time1)
-        except Exception as e:
-            messagebox.showerror("保存错误", f"保存文件失败: {e}")
-            time1 = time.time()
-            self.run_analysis('save_quadrant_analysis', time0, time1, e)
 
     def _create_parameter_form_imfs(self):
         """创建EMD分解参数输入表单"""
         self.clear_form()
-        form_frame = ttk.Frame(self.param_frame)
-        form_frame.pack(fill=tk.BOTH, padx=10, pady=5)
+        form_frame = self._make_scrollable_frame(self.param_frame)
 
         parameters = [("path", "Path:", ""),
                       ("d_start", "Start date (YY-MM-DD):", ""),
@@ -641,8 +632,11 @@ class TurbulentAnalysisApp:
                       ("timestep", "Timestep (s):", ""),
                       ("timeseg", "Timesegment (xxmin:)", ""),
                       ("d_exclude", "Exclude date:", ""),
+                      ("threshold", "Freq threshold:", ""),
                       ("vars", "Variabel name:", ""), ("height", "Height (m):", "")]
-        self._build_form(form_frame, parameters, 'imfs', start_row=len(parameters) + 1)
+        self._build_form(form_frame, parameters, 'imfs', start_row=len(parameters) + 1,
+                         command1=self._create_collect_imfsparameter,
+                         command2=lambda: self.on_save('imfs'), command3=lambda: self.show_plot_emd_settings('imfs'))
 
     def _create_collect_imfsparameter(self):
         time0 = time.time()
@@ -652,6 +646,7 @@ class TurbulentAnalysisApp:
             messagebox.showinfo("成功", "参数已保存！")
             for key in ["timestep", "timeseg", "d_start", "d_end", "t_start", "t_end", "path"]:
                 params.update({key: params_collect[key].get()})
+            params.update({"threshold": float(params_collect["threshold"].get())})
             params.update({"d_exclude": params_collect["d_exclude"].get().split(',')})
             params.update({"vars": params_collect["vars"].get().split(',')})
             params.update({"height": [float(h) for h in params_collect["height"].get().split(',')]})
@@ -664,20 +659,19 @@ class TurbulentAnalysisApp:
             pass
 
         try:
-            w_large, w_small, t_large, t_large, uf_df = high_low_freq(params['path'], params['d_start'],
+            w_large, w_small, t_large, t_small, uf_df = high_low_freq(params['path'], params['d_start'],
                                                                       params['d_end'], params['t_start'],
                                                                       params['t_end'],
-                                                                      params['d_exclde'], params['vars'],
-                                                                      params['height'])
-            self.plot_data['imfs'].update(
-                {'w_high': w_mall, 'w_low': w_large, 't_high': t_small, 't_low': t_large, 'uf': uf_df})
+                                                                      params['d_exclude'], params['vars'],
+                                                                      params['height'], params['threshold'])
+            self.plot_data['imfs'].update({'w_high': w_small, 'w_low': w_large, 't_high': t_small, 't_low': t_large})
             time1 = time.time()
             self.run_analysis('calculate_imfs', time0, time1)
         except Exception as e:
             time1 = time.time()
             self.run_analysis('calculate_imfs', time0, time1, e)
 
-    def _create_save_imfsfile(self):
+    def _create_save_imfsfile(self, out_path, fmt):
         try:
             data = self.plot_data['imfs']
             dict_df = {}
@@ -693,13 +687,13 @@ class TurbulentAnalysisApp:
                 for key in data.keys():
                     dict_ds.update({key: xr.DataArray(
                         data=dict_df[key].values,
-                        dims=["time"],
-                        coords={"time": dict_df[key].index},
+                        dims=("time", "height"),
+                        coords={"time": data[key].index, "height": data[key].columns},
                         name=key)})
                 ds = xr.Dataset(dict_ds)
                 ds.to_netcdf(out_path)
             else:
-                messagebox.showwarning("未知格式", f"不支持的文件后缀：{ext}")
+                messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
         except Exception as e:
             messagebox.showerror("保存失败", str(e))
             return
@@ -707,17 +701,129 @@ class TurbulentAnalysisApp:
     def _create_parameter_form_wavelet(self):
         """创建小波分析参数输入表单"""
         self.clear_form()
-        form_frame = ttk.Frame(self.param_frame)
-        form_frame.pack(fill=tk.BOTH, padx=10, pady=5)
+        form_frame = self._make_scrollable_frame(self.param_frame)
 
-        parameters = [("tur1", "turbulent1", ""), ("tur2", "turbulent2", ""), ("out_path", "Save file Path:", "")]
-        self._build_form(form_frame, parameters, 'wavelet', start_row=len(parameters) + 1)
+        parameters = [("dt_start", "Start datetime(YY:MM:DD HH:mm:ss):", ""), ("vars", "Variable names:", ""),
+                      ("height", "Height:", ""), ("timeseg", "Time segment:", ""), ("timestep", "Timestep:", ""),
+                      ("waveletvar", 'Wavelet Variable:', ""), ('index1', 'Starting Index:', ""),
+                      ('index2', 'Ending Index:', ""),
+                      ("scale_res", "Scale resolution:", ""), ("n_scales", "Scales number:", "")]
+        self._build_form(form_frame, parameters, 'wavelet', start_row=len(parameters) + 1,
+                         command1=self._create_collect_waveletparameter,
+                         command2=lambda: self.on_save("wavelet"),
+                         command3=lambda: self.show_plot_wavelet_settings('wavelet'))
+
+    def _create_collect_waveletparameter(self):
+        time0 = time.time()
+        try:
+            params_collect = self.form_params['wavelet']
+            params = {}
+            messagebox.showinfo("成功", "参数已保存！")
+            for key in ["timestep", "timeseg", "dt_start", "waveletvar", "index1", "index2"]:
+                params.update({key: params_collect[key].get()})
+            params.update({"vars": params_collect["vars"].get().split(',')})
+            params.update({"scale_res": float(params_collect["scale_res"].get())})
+            params.update({"n_scales": int(params_collect["n_scales"].get())})
+            params.update({"height": [float(h) for h in params_collect["height"].get().split(',')]})
+            self.params['wavelet'] = params
+        except AttributeError as e:
+            time1 = time.time()
+            self.run_analysis('calculate_wavelet', time0, time1, e)
+            pass
+
+        def extract_floats(s):
+            return [float(num) for num in re.findall(r"[-+]?\d*\.\d+|\d+", s)]
+
+        timestep = extract_floats(params['timestep'])
+        try:
+            data = None
+            if len(self.selected_files) == 0:
+                messagebox.showerror('请加载文件')
+            elif len(self.selected_files) == 1:
+                file = self.selected_files[0]
+                if file.endswith('.csv') or file.endswith('.dat'):
+                    data = pd.read_csv(self.selected_files[0], header=None, names=params['vars'])
+                elif file.endswith('.xlsx'):
+                    data = pd.read_excel(self.selected_files[0], names=params['vars'])
+                else:
+                    messagebox.showwarning("未知格式", "不支持的文件后缀")
+                data.replace(-9999.0, np.nan, inplace=True)  # 将数据中的缺测值-9999.0设置为NAN，方便插值
+                data.interpolate(method='linear')
+                data = data.ffill()
+                data = data.bfill()
+                data = data.dropna()
+                data.index = pd.date_range(start=params['dt_start'], periods=len(data.index), freq=params['timestep'])
+                data_tur = data - data.groupby(pd.Grouper(freq=params['timeseg'])).transform('mean')
+                print(1)
+                print(params['waveletvar'], params['index1'], params['index2'], timestep, params['scale_res'],
+                      params['n_scales'])
+                period, power, sig95, coi, _ = wavelet_calculate(
+                    data_tur[params['waveletvar']].loc[params['index1']:params['index2']], timestep[0],
+                    params['scale_res'], params['n_scales'])
+                print(2)
+                df_power, df_sig95, df_coi = pd.DataFrame(power.T, columns=period), pd.DataFrame(sig95.T,
+                                                                                                 columns=period), pd.DataFrame(
+                    coi)
+                print(3)
+                wavelet_result = pd.concat({'power': df_power, 'sig95': df_sig95, 'coi': df_coi}, axis=1)
+            else:
+                if all(f.endswith('.csv') or f.endswith('.dat') for f in self.selected_files):
+                    data_list = [pd.read_csv(f, header=None, names=params['vars']) for f in self.selected_files]
+                    datas = []
+                    for data1, h in zip(data_list, params['height']):
+                        data1.columns = pd.MultiIndex.from_product([[h], data1.columns])
+                        datas.append(data1)
+                    data = pd.concat(datas, axis=1)
+                    data.columns = data.columns.swaplevel(0, 1)
+                else:
+                    messagebox.showwarning("未知格式", "不支持的文件后缀")
+                data.replace(-9999.0, np.nan, inplace=True)  # 将数据中的缺测值-9999.0设置为NAN，方便插值
+                data.interpolate(method='linear')
+                data = data.ffill()
+                data = data.bfill()
+                data = data.dropna()
+                data.index = pd.date_range(start=params['dt_start'], periods=len(data.index), freq=params['timestep'])
+                data_tur = data - data.groupby(pd.Grouper(freq=params['timeseg'])).transform('mean')
+                wavelet_results = {}
+                for height in params['height']:
+                    period, power, sig95, coi, _ = wavelet_calculate(
+                        data_tur[params['waveletvar']].loc[params['index1']:params['index2']], timestep[0],
+                        params['scale_res'], params['n_scales'])
+                    df_power, df_sig95, df_coi = pd.DataFrame(power.T, columns=period), pd.DataFrame(sig95.T,
+                                                                                                     columns=period), pd.DataFrame(
+                        coi)
+                    wavelet_result = pd.concat({'power': df_power, 'sig95': df_sig95, 'coi': df_coi}, axis=1)
+                    wavelet_results.update({height: wavelet_result})
+                wavelet_result = pd.concat(wavelet_results, axis=0)
+
+            self.plot_data['wavelet'].update({'wavelet_result': wavelet_result})
+            time1 = time.time()
+            self.run_analysis('calculate_wavelet', time0, time1)
+        except Exception as e:
+            time1 = time.time()
+            self.run_analysis('calculate_wavelet', time0, time1, e)
+
+    def _create_save_waveletfile(self, out_path, fmt):
+        try:
+            data = self.plot_data['wavelet']
+            dict_df = {}
+            for key in data.keys():
+                dict_df.update({key: data[key]})
+            df = pd.concat(dict_df, axis=1)
+            if fmt == ".csv":
+                df.to_csv(out_path, index=False)
+            elif fmt in (".xls", ".xlsx"):
+                df.to_excel(out_path, index=False, engine="openpyxl")
+            else:
+                messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
+        except Exception as e:
+            messagebox.showerror("保存失败", str(e))
+            return
 
     def _create_parameter_form_fit(self):
         """创建MOST拟合参数输入表单"""
         self.clear_form()
-        form_frame = ttk.Frame(self.param_frame)
-        form_frame.pack(fill=tk.BOTH, padx=10, pady=5)
+        form_frame = self._make_scrollable_frame(self.param_frame)
 
         parameters = [("tur1", "turbulent1", ""), ("tur2", "turbulent2", ""), ("out_path", "Save file Path:", "")]
         self._build_form(form_frame, parameters, 'fit', start_row=len(parameters) + 1)
@@ -1726,12 +1832,18 @@ class TurbulentAnalysisApp:
             'fonts': tk.StringVar(value='Times New Roman'),
             'fontsize': tk.IntVar(value=12),
             'dpi': tk.IntVar(value=100),
-            'color': tk.StringVar(value='#000000'),
+            'color1': tk.StringVar(value='#FF1F5B'),
+            'color2': tk.StringVar(value='#00CD6C'),
             'marker_size': tk.IntVar(value=8),
-            'timeidx': tk.IntVar(value=0),
+            'start_date': tk.StringVar(),
+            'end_date': tk.StringVar(),
+            'start_time': tk.StringVar(value='12:00:00'),
+            'end_time': tk.StringVar(value='12:29:59'),
+            'start_layer': tk.IntVar(),
+            'end_layer': tk.IntVar(),
             'nrows': tk.IntVar(value=1),
             'ncols': tk.IntVar(value=1),
-            'plot_type': tk.StringVar(value='distribution')
+            'plot_type': tk.StringVar(value='plot')
         }
 
         # 获取数据中的变量列表（假设self.df是已加载的DataFrame）
@@ -1740,14 +1852,14 @@ class TurbulentAnalysisApp:
             '请选择']  # ["corr","u*","|z/L|"]
 
         # 创建表单控件
-        ttk.Label(settings_win, text="变量1:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        ttk.Label(settings_win, text="小涡变量:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
         x_combo = ttk.Combobox(settings_win,
                                textvariable=self.plot_settings['var1'],
                                values=variables,
                                state='readonly')
         x_combo.grid(row=0, column=1, padx=5, pady=5)
 
-        ttk.Label(settings_win, text="变量2:").grid(row=0, column=2, padx=5, pady=5, sticky='e')
+        ttk.Label(settings_win, text="大涡变量:").grid(row=0, column=2, padx=5, pady=5, sticky='e')
         y_combo = ttk.Combobox(settings_win,
                                textvariable=self.plot_settings['var2'],
                                values=variables,
@@ -1760,9 +1872,247 @@ class TurbulentAnalysisApp:
             if color:
                 self.plot_settings['color'].set(color)
 
-        ttk.Label(settings_win, text="颜色:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
-        ttk.Entry(settings_win, textvariable=self.plot_settings['color'], width=7).grid(row=1, column=1, sticky='w')
+        ttk.Label(settings_win, text="颜色1:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        ttk.Entry(settings_win, textvariable=self.plot_settings['color1'], width=7).grid(row=1, column=1, sticky='w')
         ttk.Button(settings_win, text="选择颜色", command=choose_color).grid(row=1, column=2, padx=20)
+
+        ttk.Label(settings_win, text="颜色2:").grid(row=2, column=0, padx=5, pady=5, sticky='e')
+        ttk.Entry(settings_win, textvariable=self.plot_settings['color2'], width=7).grid(row=2, column=1, sticky='w')
+        ttk.Button(settings_win, text="选择颜色", command=choose_color).grid(row=2, column=2, padx=20)
+
+        # 设置绘图风格
+        draw_styles = ['default'] + plt.style.available
+        ttk.Label(settings_win, text="绘图风格:").grid(row=3, column=0, padx=5, pady=5, sticky='e')
+        x_combo = ttk.Combobox(settings_win,
+                               textvariable=self.plot_settings['drawing_style'],
+                               values=draw_styles,
+                               state='readonly')
+        x_combo.grid(row=3, column=1, padx=5, pady=5)
+
+        # 点大小
+        ttk.Label(settings_win, text="点大小:").grid(row=3, column=2, padx=5, pady=5, sticky='e')
+        ttk.Spinbox(settings_win,
+                    from_=1, to=20,
+                    textvariable=self.plot_settings['marker_size'],
+                    width=5).grid(row=3, column=3, sticky='w')
+        # 图形行数
+        ttk.Label(settings_win, text="图行数:").grid(row=4, column=0, padx=0, pady=5, sticky='e')
+        ttk.Spinbox(settings_win,
+                    from_=1, to=4,
+                    textvariable=self.plot_settings['nrows'],
+                    width=5).grid(row=4, column=1, sticky='w')
+
+        # 图形列数
+        ttk.Label(settings_win, text="图列数:").grid(row=4, column=2, padx=0, pady=5, sticky='e')
+        ttk.Spinbox(settings_win,
+                    from_=1, to=4,
+                    textvariable=self.plot_settings['ncols'],
+                    width=5).grid(row=4, column=3, sticky='w')
+
+        # 字体类型
+        def list_available_fonts():
+            """返回Matplotlib可用的所有字体家族名称（去重）"""
+            fonts = set()
+            for font in fm.fontManager.ttflist:
+                fonts.add(font.name)  # 提取字体家族名称
+            return sorted(list(fonts))
+
+        fonts = list_available_fonts()
+        ttk.Label(settings_win, text="字体类型:").grid(row=5, column=0, padx=5, pady=5, sticky='e')
+        x_combo = ttk.Combobox(settings_win,
+                               textvariable=self.plot_settings['fonts'],
+                               values=fonts,
+                               state='readonly')
+        x_combo.grid(row=5, column=1, padx=5, pady=5)
+        # 字体大小
+        ttk.Label(settings_win, text="字体大小:").grid(row=5, column=2, padx=0, pady=5, sticky='e')
+        ttk.Spinbox(settings_win,
+                    from_=1, to=32,
+                    textvariable=self.plot_settings['fontsize'],
+                    width=5).grid(row=5, column=3, sticky='w')
+        # 清晰度
+        ttk.Label(settings_win, text="清晰度:").grid(row=6, column=0, padx=0, pady=5, sticky='e')
+        ttk.Spinbox(settings_win,
+                    from_=50, to=1000, increment=50,
+                    textvariable=self.plot_settings['dpi'],
+                    width=5).grid(row=6, column=1, sticky='w')
+        # 起始日期
+        ttk.Label(settings_win, text="绘图起始日期:") \
+            .grid(row=7, column=0, padx=5, pady=5, sticky='e')
+        DateEntry(settings_win,
+                  textvariable=self.plot_settings['start_date'],
+                  date_pattern='yyyy-MM-dd',  # 格式：年-月-日
+                  year=2021, month=4, day=25,  # 默认值
+                  width=12) \
+            .grid(row=7, column=1, sticky='w')
+
+        # 结束日期
+        ttk.Label(settings_win, text="绘图结束日期:") \
+            .grid(row=7, column=2, padx=5, pady=5, sticky='e')
+        DateEntry(settings_win,
+                  textvariable=self.plot_settings['end_date'],
+                  date_pattern='yyyy-MM-dd',
+                  year=2021, month=4, day=25,
+                  width=12) \
+            .grid(row=7, column=3, sticky='w')
+
+        # 起始时间
+        ttk.Label(settings_win, text="起始时间 (HH:mm:ss):") \
+            .grid(row=8, column=0, sticky='e', padx=5, pady=5)
+        ttk.Entry(settings_win,
+                  textvariable=self.plot_settings['start_time'],
+                  width=8) \
+            .grid(row=8, column=1, sticky='w')
+
+        # 结束时间
+        ttk.Label(settings_win, text="结束时间 (HH:mm:ss):") \
+            .grid(row=8, column=2, sticky='e', padx=5, pady=5)
+        ttk.Entry(settings_win,
+                  textvariable=self.plot_settings['end_time'],
+                  width=8) \
+            .grid(row=8, column=3, sticky='w')
+
+        # 绘图的铁塔起始层
+        ttk.Label(settings_win, text="起始层:").grid(row=9, column=0, padx=0, pady=5, sticky='e')
+        ttk.Spinbox(settings_win,
+                    from_=0, to=100,
+                    textvariable=self.plot_settings['start_layer'],
+                    width=5).grid(row=9, column=1, sticky='w')
+
+        # 绘图的铁塔终点层
+        ttk.Label(settings_win, text="终点层:").grid(row=9, column=2, padx=0, pady=5, sticky='e')
+        ttk.Spinbox(settings_win,
+                    from_=0, to=100,
+                    textvariable=self.plot_settings['end_layer'],
+                    width=5).grid(row=9, column=3, sticky='w')
+
+        # 绘图类型
+        ttk.Label(settings_win, text="绘图类型:").grid(row=10, column=0, padx=5, pady=5, sticky='e')
+        plot_types = [('折线图 ', 'plot'), ('散点图', 'scatter')]
+        for i, (text, value) in enumerate(plot_types):
+            ttk.Radiobutton(settings_win,
+                            text=text,
+                            variable=self.plot_settings['plot_type'],
+                            value=value).grid(row=10 + i, column=1, sticky='w')
+        # 工作区按钮
+        tk.Button(settings_win, text="打开工作区", command=lambda: self.on_click_workspace(task_name)).grid(row=12,
+                                                                                                            column=0,
+                                                                                                            pady=10)
+
+        # 开始绘图按钮
+        ttk.Button(settings_win,
+                   text="开始绘图",
+                   command=lambda: [self._execute_emdplot(task_name), settings_win.destroy()]
+                   ).grid(row=12, column=2, pady=10)
+
+    def _execute_emdplot(self, task_name):
+        """执行实际绘图操作"""
+        # 获取设置参数
+        time0 = time.time()
+        print(self.plot_settings.items())
+        settings = {k: v.get() for k, v in self.plot_settings.items()}
+        print(settings)
+        # 验证参数
+        if settings['var1'] == '请选择' or settings['var2'] == '请选择':
+            messagebox.showerror("错误", "请先选择X轴和Y轴变量")
+            return
+
+        # 清除旧图形
+        self.fig.clf()
+        plt.style.use(settings['drawing_style'])
+        plt.rcParams['figure.dpi'] = settings['dpi']
+        plt.rcParams['font.family'] = settings['fonts']
+        plt.rcParams['font.size'] = settings['fontsize']
+        plt.rcParams['mathtext.fontset'] = 'stix'
+        self.axes = self.fig.subplots(nrows=settings['nrows'], ncols=settings['ncols'])
+
+        try:
+            # 在第一个子图绘制
+            self._plot_to_axis_emd(self.axes, settings)
+            # 调整布局并刷新
+            self.fig.tight_layout()
+            self.canvas.draw()
+            time1 = time.time()
+            self.run_analysis(''.join(['draw_', task_name]), time0, time1)
+
+        except Exception as e:
+            messagebox.showerror("绘图错误", f"发生错误: {str(e)}")
+            time1 = time.time()
+            self.run_analysis('draw_corr', time0, time1, e)
+
+    def _plot_to_axis_emd(self, axes, settings):
+        """通用绘图方法"""
+        if settings['plot_type'] == 'plot':
+            self.emd_plot(axes, self.plot_data['imfs'][settings['var1']], self.plot_data['imfs'][settings['var2']],
+                          settings['color1'],
+                          settings['color2'], " ".join([settings['start_date'], settings['start_time']]),
+                          " ".join([settings['end_date'],
+                                    settings['end_time']]), settings['start_layer'], settings['end_layer'],
+                          settings['nrows'])
+        else:
+            messagebox.showerror("暂不支持使用该功能")
+
+    def emd_plot(self, axes, vars1, vars2, color1, color2, start, end, layer1, layer2, row):
+        time = np.arange(0, 1800, 0.1)
+        data1, data2 = vars1.loc[start:end].iloc[:, layer1:layer2], vars2.loc[start:end].iloc[:, layer1:layer2]
+        axes = np.atleast_2d(axes)
+        for ax, column1, column2 in zip(axes.flat, data1.columns, data2.columns):
+            ax.plot(time, data1[column1], color=color1, label='Small eddy')
+            ax.plot(time, data2[column2], color=color2, label='Large eddy')
+            ax.set_xticks(np.arange(0, 1801, 300))
+            ax.legend(loc='best')
+        for ax in axes[row - 1, :]:
+            ax.set_xlabel('Time')
+        for ax in axes[:, 0]:
+            ax.set_ylabel('signal')
+        # 自动调整布局
+        self.fig.tight_layout()
+        # 强制刷新画布显示新图形
+        self.canvas.draw()
+
+    # 新增的wavelet绘图设置
+    def show_plot_wavelet_settings(self, task_name):
+        """显示绘图属性设置窗口"""
+        # 创建设置窗口
+        settings_win = tk.Toplevel(self.root)
+        settings_win.title("绘图属性设置")
+
+        # 存储设置的变量
+        self.plot_settings = {
+            'var': tk.StringVar(value='请选择'),
+            'drawing_style': tk.StringVar(value='default'),
+            'fonts': tk.StringVar(value='Times New Roman'),
+            'fontsize': tk.IntVar(value=12),
+            'dpi': tk.IntVar(value=100),
+            'colorbar': tk.StringVar(value=''),
+            'marker_size': tk.IntVar(value=8),
+            'nrows': tk.IntVar(value=1),
+            'ncols': tk.IntVar(value=1),
+            'plot_type': tk.StringVar(value='contourf')
+        }
+
+        # 获取数据中的变量列表（假设self.df是已加载的DataFrame）
+
+        variables = ['请选择'] + list(self.plot_data[task_name].keys()) if hasattr(self, 'plot_data') else [
+            '请选择']  # ["corr","u*","|z/L|"]
+
+        # 创建表单控件
+        ttk.Label(settings_win, text="小波分析变量:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        x_combo = ttk.Combobox(settings_win,
+                               textvariable=self.plot_settings['var'],
+                               values=variables,
+                               state='readonly')
+        x_combo.grid(row=0, column=1, padx=5, pady=5)
+
+        # 颜色条选择
+        ttk.Label(settings_win, text="选择颜色条:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+
+        # 用于显示颜色调名称的输入框
+        self.color_entry = ttk.Entry(settings_win, textvariable=self.plot_settings['colorbar'], width=20)
+        self.color_entry.grid(row=1, column=1, padx=20)
+
+        # 颜色选择按钮
+        ttk.Button(settings_win, text="选择颜色调色板", command=self.show_color_palette).grid(row=1, column=2, padx=20)
 
         # 设置绘图风格
         draw_styles = ['default'] + plt.style.available
@@ -1820,32 +2170,138 @@ class TurbulentAnalysisApp:
                     from_=50, to=1000, increment=50,
                     textvariable=self.plot_settings['dpi'],
                     width=5).grid(row=5, column=1, sticky='w')
-        # 绘图开始时刻的索引
-        ttk.Label(settings_win, text="绘图时刻:").grid(row=5, column=2, padx=0, pady=5, sticky='e')
-        ttk.Spinbox(settings_win,
-                    from_=0, to=48, increment=1,
-                    textvariable=self.plot_settings['timeidx'],
-                    width=5).grid(row=5, column=3, sticky='w')
+
         # 绘图类型
-        ttk.Label(settings_win, text="绘图类型:").grid(row=6, column=0, padx=5, pady=5, sticky='e')
-        plot_types = [('分布图', 'distribution'), ('散点图', 'scatter')]
+        ttk.Label(settings_win, text="绘图类型:").grid(row=9, column=0, padx=5, pady=5, sticky='e')
+        plot_types = [('等值线图 ', 'contourf'), ('散点图', 'scatter')]
         for i, (text, value) in enumerate(plot_types):
             ttk.Radiobutton(settings_win,
                             text=text,
                             variable=self.plot_settings['plot_type'],
-                            value=value).grid(row=6 + i, column=1, sticky='w')
+                            value=value).grid(row=9 + i, column=1, sticky='w')
         # 工作区按钮
-        tk.Button(settings_win, text="打开工作区", command=lambda: self.on_click_workspace(task_name)).grid(row=8,
+        tk.Button(settings_win, text="打开工作区", command=lambda: self.on_click_workspace(task_name)).grid(row=11,
                                                                                                             column=0,
                                                                                                             pady=10)
 
         # 开始绘图按钮
         ttk.Button(settings_win,
                    text="开始绘图",
-                   command=lambda: [self._execute_emdplot(task_name), settings_win.destroy()]
-                   ).grid(row=8, column=2, pady=10)
+                   command=lambda: [self._execute_waveletplot(task_name), settings_win.destroy()]
+                   ).grid(row=11, column=2, pady=10)
 
-    def _execute_emdplot(self, task_name):
+    def on_mouse_wheel(self, event):
+        # 确保self.canvas存在且未销毁
+        if hasattr(self, 'canvas') and self.canvas.winfo_exists():
+            # 滚动事件：滚动鼠标时，滚动canvas
+            if event.delta > 0:
+                self.canvas.yview_scroll(-1, "units")  # 向上滚动
+            else:
+                self.canvas.yview_scroll(1, "units")  # 向下滚动
+        else:
+            print("Canvas no longer exists or has been destroyed.")
+
+    def show_color_palette(self):
+        # 打开调色板窗口
+        palette_win = tk.Toplevel()
+        palette_win.title("选择颜色调色板")
+        palette_win.geometry("800x600")  # 设置窗口初始尺寸
+
+        # 创建Canvas和Scrollbar
+        self.canvas1 = tk.Canvas(palette_win)  # 使用 self.canvas，避免 AttributeError
+        scrollbar = tk.Scrollbar(palette_win, orient="vertical", command=self.canvas1.yview)
+        scrollable_frame = ttk.Frame(self.canvas1)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas1.configure(scrollregion=self.canvas1.bbox("all"))
+        )
+
+        self.canvas1.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        self.canvas1.config(yscrollcommand=scrollbar.set)
+
+        # 配置布局权重
+        palette_win.grid_rowconfigure(0, weight=1)
+        palette_win.grid_columnconfigure(0, weight=1)
+
+        # 放置滚动条和Canvas
+        self.canvas1.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        # 获取matplotlib调色板列表
+        cmap_names = plt.colormaps()
+
+        # 每个调色板显示为颜色条+名称，三列布局
+        num_columns = 3
+        row, col = 0, 0
+
+        for cmap_name in cmap_names:
+            cmap = plt.get_cmap(cmap_name)
+            color_band = np.linspace(0, 1, 256)
+
+            # --- 颜色名称标签（放在颜色条上方）---
+            name_label = tk.Label(
+                scrollable_frame,
+                text=cmap_name,
+                anchor="center",
+                width=25  # 增加宽度避免文字截断
+            )
+            name_label.grid(
+                row=row, column=col,
+                padx=5, pady=(5, 0),  # pady=(上间距, 下间距)
+                sticky="ew"
+            )
+
+            # --- 颜色条Canvas ---
+            color_bar = tk.Canvas(
+                scrollable_frame,
+                height=20,
+                width=250  # 加宽颜色条
+            )
+            color_bar.grid(
+                row=row + 1, column=col,  # 名称在row，颜色条在row+1
+                padx=5, pady=(0, 10),  # 底部留更多间距
+                sticky="ew"
+            )
+
+            # 绘制颜色渐变
+            for j, color_value in enumerate(color_band):
+                color = cmap(color_value)
+                color_hex = mpl_colors.rgb2hex(color[:3])
+                color_bar.create_line(j, 0, j + 1, 20, fill=color_hex)
+
+            # 绑定点击事件
+            color_bar.bind(
+                "<Button-1>",
+                lambda event, cmap_name=cmap_name: self.choose_color(cmap_name)
+            )
+
+            # 更新行列索引
+            col += 1
+            if col == num_columns:
+                col = 0
+                row += 2  # 每行包含名称和颜色条，因此+2
+
+        # 配置滚动区域权重
+        scrollable_frame.grid_columnconfigure((0, 1, 2), weight=1)
+
+        # 绑定鼠标滚轮事件
+        self.canvas1.bind_all("<MouseWheel>", self.on_mouse_wheel)
+
+        # 添加关闭事件时，移除Canvas绑定
+        palette_win.protocol("WM_DELETE_WINDOW", lambda: self.on_close_palette(palette_win))
+
+    def on_close_palette(self, palette_win):
+        # 在关闭窗口时解除事件绑定
+        if hasattr(self, 'canvas') and self.canvas1.winfo_exists():
+            self.canvas1.unbind_all("<MouseWheel>")  # 移除滚动事件绑定
+        palette_win.destroy()  # 销毁窗口
+
+    def choose_color(self, cmap_name):
+        # 更新颜色调名称
+        self.plot_settings['colorbar'].set(cmap_name)  # 更新颜色调名称
+
+    def _execute_waveletplot(self, task_name):
         """执行实际绘图操作"""
         # 获取设置参数
         time0 = time.time()
@@ -1853,7 +2309,7 @@ class TurbulentAnalysisApp:
         settings = {k: v.get() for k, v in self.plot_settings.items()}
         print(settings)
         # 验证参数
-        if settings['var1'] == '请选择' or settings['var2'] == '请选择':
+        if settings['var'] == '请选择':
             messagebox.showerror("错误", "请先选择X轴和Y轴变量")
             return
 
@@ -1868,7 +2324,7 @@ class TurbulentAnalysisApp:
 
         try:
             # 在第一个子图绘制
-            self._plot_to_axis_emd(self.axes, settings)
+            self._plot_to_axis_wavelet(self.axes, settings)
             # 调整布局并刷新
             self.fig.tight_layout()
             self.canvas.draw()
@@ -1880,78 +2336,42 @@ class TurbulentAnalysisApp:
             time1 = time.time()
             self.run_analysis('draw_corr', time0, time1, e)
 
-    def _plot_to_axis_emd(self, axes, settings):
+    def _plot_to_axis_wavelet(self, axes, settings):
         """通用绘图方法"""
-        if settings['plot_type'] == 'distribution':
-            self.emd_plot(axes, self.plot_data['quan'][settings['var1']], self.plot_data['quan'][settings['var2']],
-                          self.plot_data['quan'][settings['var1'] + "_std"],
-                          self.plot_data['quan'][settings['var2'] + "_std"], settings["timeidx"],
-                          color=settings['color'])
+        if settings['plot_type'] == 'contourf':
+            self.wavelet_plot(axes, self.plot_data['wavelet'][settings['var']], settings['colorbar'])
         else:
             messagebox.showerror("暂不支持使用该功能")
 
-    def emd_plot(self, axes, vars1, vars2, vars1_std, vars2_std, timeidx, color='black'):
-        def PDF(ax, w, t, color):
-            # --- 步骤1: 提取数据并标准化（可选）---
-            w_normalized = w.values
-            t_normalized = t.values
-
-            data_points = np.vstack([w_normalized, t_normalized])  # 形状为(2, N)
-
-            # --- 步骤2: 动态生成网格 ---
-            def get_grid_range(data, buffer_ratio=0.05):
-                min_val = np.min(data)
-                max_val = np.max(data)
-                delta = (max_val - min_val) * buffer_ratio
-                return [min_val - delta, max_val + delta]
-
-            x_range = get_grid_range(data_points[0])
-            y_range = get_grid_range(data_points[1])
-
-            # 生成网格点（分辨率可调）
-            x = np.linspace(x_range[0], x_range[1], 100)
-            y = np.linspace(y_range[0], y_range[1], 100)
-            X, Y = np.meshgrid(x, y)
-            grid_points = np.vstack([X.ravel(), Y.ravel()])
-
-            # --- 步骤3: 计算KDE概率密度 ---
-            kde = gaussian_kde(data_points)
-            Z = kde(grid_points).reshape(X.shape)
-
-            # 归一化概率密度（总积分为1）
-            Z_normalized = Z / Z.sum()
-
-            # --- 步骤4: 确定等高线层级（50%, 20%, 10%）---
-            sorted_density = np.sort(Z_normalized.ravel())[::-1]
-            cumulative = np.cumsum(sorted_density)
-            levels = [sorted_density[np.where(cumulative >= p)[0][0]] for p in [0.5, 0.2, 0.1]]
-
-            # --- 步骤5: 绘制等值线图 ---
-            #     ax.contourf(X, Y, Z, levels=10, cmap=cmap)
-            contour = ax.contour(X, Y, Z_normalized, levels=levels, colors=color, linewidths=1)
-            #     ax.scatter(data_points[0], data_points[1], s=1, alpha=0.3, c='blue')  # 叠加数据点
-            return ax
-
-        for i, ax in enumerate(axes.flat):
-            ax = PDF(ax, (vars1 / vars1_std).iloc[i * 18000:(i + 1) * 18000],
-                     (vars2 / vars2_std).iloc[i * 18000:(i + 1) * 18000], color)
-            ax.annotate(f'({string.ascii_lowercase[i]})', xy=(0.5, 1.05), ha='center', xycoords='axes fraction',
-                        fontsize=12)
-            ax.set_xlim([-2.5, 2.5])
-            ax.set_ylim([-2.5, 2.5])
-            ax.plot([-2.5, 2.5], [0, 0], color='black', linestyle='-', linewidth=0.5)
-            ax.plot([0, 0], [-2.5, 2.5], color='black', linestyle='-', linewidth=0.5)
-            #         ax.set_xlim(0.1,0.5)
-        for ax in axes[1, :]:
-            ax.set_xticks(np.arange(-2, 3, 1))
-            ax.set_xlabel('w/$\sigma$$_{w}$')
-        for ax in axes[:, 0]:
-            ax.set_yticks(np.arange(-2, 3, 1))
-            ax.set_ylabel('T/$\sigma$$_{T}$')
+    def wavelet_plot(self, ax, var, color1):
+        t = np.arange(0, 1800, 0.1)
+        dt = 0.1
+        period = var['power'].columns
+        power, sig95, coi = var['power'].T, var['sig95'].T, var['coi'].T.values[0]
+        levels = np.linspace(-4, 4, 101)
+        c = ax.contourf(t, np.log2(period), np.log2(power), levels, extend='both', cmap=plt.get_cmap(color1))
+        extent = [t.min(), t.max(), 0, max(period)]
+        ax.contour(t, np.log2(period), sig95, [-99, 1], colors='k', linewidths=0.5,
+                   extent=extent)
+        ax.fill(np.concatenate([t, t[-1:] + dt, t[-1:] + dt,
+                                t[:1] - dt, t[:1] - dt]),
+                np.concatenate([np.log2(coi), [1e-9], np.log2(period[-1:]),
+                                np.log2(period[-1:]), [1e-9]]),
+                'k', alpha=0.3, hatch='x')
+        ax.set_xlim(0, 1800)
+        ax.set_ylim(-2, 10)
+        ax.set_xticks(np.arange(0, 1801, 300))
+        ax.set_yticks(np.arange(-2, 11, 2), [0.25, 1, 4, 16, 64, 256, 1024])
+        cax = self.fig.add_axes([0.93, 0.2, 0.012, 0.6])
+        bar = self.fig.colorbar(c, ax=ax, cax=cax)
+        bar.ax.set_yticks([-4, -2, 0, 2, 4])
+        bar.set_label(r'Wavelet power (2$^{n}$)', fontsize=10, labelpad=3)
         # 自动调整布局
-        self.fig.tight_layout()
+        self.fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
         # 强制刷新画布显示新图形
         self.canvas.draw()
+
+    # 新增的MOST绘图设置
 
     # 打开工作区
     def on_click_workspace(self, task_info):

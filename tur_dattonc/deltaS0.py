@@ -2,9 +2,18 @@ import numpy as np
 import pandas as pd
 import glob
 import time
-from tur_dattonc.Quadrant_analysis import quan
+import re
+from Quadrant_analysis import quan
 
-def read_datfiles(paths, hole,start_date, end_date, start_time,end_time,exclude_dates, vars_list,height):
+def custom_sort_key(path):
+    category = path.split('\\')[-1][0]  # 提取 A, B, C
+    number = 4-int(path.split('\\')[-1][1:])  # 提取数字 1, 2, 3, 4
+    return (category, number)
+
+
+def read_datfiles(path, hole,start_date, end_date, start_time,end_time,exclude_dates, vars_list,height):
+    paths = glob.glob(path)
+    paths = sorted(paths, key=custom_sort_key,reverse=True)
     dates = pd.date_range(start=start_date, end=end_date)
     exclude_dates = exclude_dates  # Date of missing data
     exclude_dates = pd.to_datetime(exclude_dates)

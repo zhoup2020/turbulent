@@ -8,7 +8,10 @@ import pandas as pd
 import time
 from joblib import Parallel, delayed
 from PyEMD import EMD
+import glob
+import re
 from scipy.signal import hilbert
+
 
 # Calculate average frequency of every imf model
 def compute_avg_frequency(imf, t):
@@ -16,6 +19,7 @@ def compute_avg_frequency(imf, t):
     instantaneous_phase = np.unwrap(np.angle(analytic_signal))
     instantaneous_frequency = np.diff(instantaneous_phase) / (2 * np.pi * np.diff(t))
     return np.mean(instantaneous_frequency)
+
 
 # Let signal decompose high and low signal (Using EMD decomposition is used)
 def process_emd(signal, threshold=0.1, max_imf=14):
@@ -66,7 +70,7 @@ def process_emd(signal, threshold=0.1, max_imf=14):
 
 
 # Use Joblib Parallel computing
-def parallel_emd_processing(series, freq='30min', n_jobs=-1):
+def parallel_emd_processing(series, threshold=0.1, freq='30min', n_jobs=-1):
     groups = [group for _, group in series.resample(freq) if not group.empty]
 
     results = Parallel(n_jobs=n_jobs, verbose=0)(
@@ -77,22 +81,45 @@ def parallel_emd_processing(series, freq='30min', n_jobs=-1):
     return pd.concat(results)
 
 
-def high_low_freq(paths,start_date,end_date,start_time,end_time,exclude_dates,vars_list,height):
-    dates = pd.date_range(start=start_date,end=end_date)
-    exclude_dates = exclude_dates   # 数据缺失的日期
+def custom_sort(folder_path):
+    # 提取文件夹名称（以最后一个斜杠为界）
+    folder_name = folder_path.split("\\")[-1]
+
+    # 使用正则表达式提取字母和数字
+    match = re.match(r'([A-Za-z]+)(\d+)', folder_name)
+
+    # 如果匹配成功
+    if match:
+        letter = match.group(1)  # 字母部分
+        number = int(match.group(2))  # 数字部分
+    else:
+        # 如果无法匹配，返回最大值来保证它排到最后
+        return (float('inf'), float('inf'))
+
+    # 字母的优先级：C > B > A，C为最高，B其次，A为最后
+    letter_priority = {'C': 0, 'B': 1, 'A': 2}
+
+    # 返回字母的优先级和数字的顺序
+    return (letter_priority.get(letter, float('inf')), number)
+
+
+def high_low_freq(path, start_date, end_date, start_time, end_time, exclude_dates, vars_list, height, threshold):
+    paths = sorted(glob.glob(path), key=custom_sort)
+    dates = pd.date_range(start=start_date, end=end_date)
+    exclude_dates = exclude_dates  # 数据缺失的日期
     exclude_dates = pd.to_datetime(exclude_dates)
-    dates = dates[~dates.isin(exclude_dates)]                   # 剔除掉缺测日期
+    dates = dates[~dates.isin(exclude_dates)]  # 剔除掉缺测日期
     dates1 = dates.strftime('%m%d').tolist()
     dates2 = dates.strftime('%m-%d').tolist()
-    w_low,w_high,t_low,t_high,uf_all = [],[],[],[],[]
+    w_low, w_high, t_low, t_high, uf_all = [], [], [], [], []
     for path in paths:
         df_list = []
         time1 = time.time()
-        for date,date1,date2 in zip(dates,dates1,dates2):
+        for date, date1, date2 in zip(dates, dates1, dates2):
             try:
-                filename = ''.join(['/ec_flux_2021',date1,'_0000.dat'])
-                file = ''.join([path,filename])
-                df = pd.read_csv(file,header=None)
+                filename = ''.join(['/ec_flux_2021', date1, '_0000.dat'])
+                file = ''.join([path, filename])
+                df = pd.read_csv(file, header=None)
                 df.columns = vars_list
                 df.index = pd.date_range(start=date, periods=len(df), freq='0.1s')
                 # Filter the data and populate the missing values.
@@ -105,32 +132,32 @@ def high_low_freq(paths,start_date,end_date,start_time,end_time,exclude_dates,va
                 df_sel = df_sel.bfill()
                 df_sel = df_sel.dropna()
                 half_hour_means = df_sel.groupby(pd.Grouper(freq='30min')).transform('mean')
-                df_tur = df_sel - half_hour_means     # turbulent
+                df_tur = df_sel - half_hour_means  # turbulent
                 df_list.append(df_tur)
             except FileNotFoundError as e:
                 print(e)
-        #         print(f'There is no data for {date1}')
+                #         print(f'There is no data for {date1}')
                 continue
         df_dataframe = pd.concat(df_list, axis=0)
-        uf= np.sqrt(np.sqrt(np.abs(((df_dataframe['u']*df_dataframe['w']).resample('30min').mean().dropna())**2+((df_dataframe['v']*df_dataframe['w']).resample('30min').mean().dropna())**2)))
-        signal_w = parallel_emd_processing(df_dataframe['w'])
-        signal_t = parallel_emd_processing(df_dataframe['t'])
-        w_high_freq,t_high_freq = signal_w['high_freq_signal'],signal_t['high_freq_signal']
-        w_low_freq,t_low_freq = signal_w['low_freq_signal'],signal_t['low_freq_signal']
+        uf = np.sqrt(np.sqrt(np.abs(((df_dataframe['u'] * df_dataframe['w']).resample('30min').mean().dropna()) ** 2 + (
+            (df_dataframe['v'] * df_dataframe['w']).resample('30min').mean().dropna()) ** 2)))
+        signal_w = parallel_emd_processing(df_dataframe['w'], threshold=threshold)
+        signal_t = parallel_emd_processing(df_dataframe['t'], threshold=threshold)
+        w_high_freq, t_high_freq = signal_w['high_freq_signal'], signal_t['high_freq_signal']
+        w_low_freq, t_low_freq = signal_w['low_freq_signal'], signal_t['low_freq_signal']
         # Collect all the variables and merge them
-        w_high.append(w_high_freq),t_high.append(t_high_freq),w_low.append(w_low_freq),t_low.append(t_low_freq)
+        w_high.append(w_high_freq), t_high.append(t_high_freq), w_low.append(w_low_freq), t_low.append(t_low_freq)
         uf_all.append(uf)
         time2 = time.time()
-        print(f'Calculation of layer consumption time {(time2-time1)/60} minutes')
-    w_large = pd.concat(w_low,axis=1)
-    w_small = pd.concat(w_high,axis=1)
-    t_large = pd.concat(t_low,axis=1)
-    t_small = pd.concat(t_high,axis=1)
-    uf_df = pd.concat(uf_all,axis=1)
+        print(f'Calculation of layer consumption time {(time2 - time1) / 60} minutes')
+    w_large = pd.concat(w_low, axis=1)
+    w_small = pd.concat(w_high, axis=1)
+    t_large = pd.concat(t_low, axis=1)
+    t_small = pd.concat(t_high, axis=1)
+    uf_df = pd.concat(uf_all, axis=1)
     w_large.columns = height
     w_small.columns = height
     t_large.columns = height
     t_small.columns = height
     uf_df.columns = height
-    return w_large,w_small,t_large,t_large,uf_df
-
+    return w_large, w_small, t_large, t_small, uf_df
