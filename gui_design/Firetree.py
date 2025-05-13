@@ -66,8 +66,8 @@ class EnhancedFileTree(ttk.Frame):
         style.map('Treeview', background=[('selected', '#0078d4')], foreground=[('selected', 'white')])
 
     def _load_icons(self):
-        self.folder_icon = tk.PhotoImage(file='icons/folder.png').subsample(12, 12)
-        self.file_icon = tk.PhotoImage(file='icons/file.png').subsample(12, 12)
+        self.folder_icon = tk.PhotoImage(file='../icons/folder.png').subsample(12, 12)
+        self.file_icon = tk.PhotoImage(file='../icons/file.png').subsample(12, 12)
 
     def update_tree(self, new_path=None):
         """更新目录树显示"""

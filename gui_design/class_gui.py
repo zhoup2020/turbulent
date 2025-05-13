@@ -24,8 +24,6 @@ from Fileviwer import EnhancedFileViewer
 from Workspace import WorkspaceViewer
 from tur_dattonc import read_single_nc, read_and_merge_ncs, read_single_csv_or_dat, read_and_merge_csvs_or_dats, wavelet_calculate,dat_nc, save_to_nc,calculate_corr,read_datfiles,high_low_freq
 
-
-
 class TurbulentAnalysisApp:
     def __init__(self, root):
         self.root = root
@@ -125,17 +123,17 @@ class TurbulentAnalysisApp:
         """加载所有图标资源"""
         try:
             self.icons = {
-                "header": self._load_image("icons/sider.png"),
-                "New File": self._load_image("icons/new.png"),
-                "Load": self._load_image("icons/load.png"),
-                "Open": self._load_image("icons/open.png"),
-                "dat_nc": self._load_image("icons/save.png"),
-                "Corr": self._load_image("icons/metrics.png"),
-                "deltaS": self._load_image("icons/deltaS.png"),
-                "quan": self._load_image("icons/quan.png"),
-                "EMD": self._load_image("icons/EMD.png"),
-                "Wavelet": self._load_image("icons/wavelet.png"),
-                "Fit": self._load_image("icons/fit.png"),
+                "header": self._load_image("../icons/sider.png"),
+                "New File": self._load_image("../icons/new.png"),
+                "Load": self._load_image("../icons/load.png"),
+                "Open": self._load_image("../icons/open.png"),
+                "dat_nc": self._load_image("../icons/save.png"),
+                "Corr": self._load_image("../icons/metrics.png"),
+                "deltaS": self._load_image("../icons/deltaS.png"),
+                "quan": self._load_image("../icons/quan.png"),
+                "EMD": self._load_image("../icons/EMD.png"),
+                "Wavelet": self._load_image("../icons/wavelet.png"),
+                "Fit": self._load_image("../icons/fit.png"),
             }
         except Exception as e:
             messagebox.showerror("图标加载错误", f"无法加载图标文件: {str(e)}")
