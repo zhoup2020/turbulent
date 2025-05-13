@@ -5,7 +5,7 @@ This software is a turbulence analysis tool developed based on python language, 
 large-scale data analysis and tedious repetitive operations, and is suitable for the processing of observation data from gradient towers and meteorological 
 station observation data. By analyzing the observation data (including wind speed, temperature, humidity and CO2 concentration), 
 the software can decompose the turbulence signals from the data and further process them, which can provide strong technical support for the atmospheric boundary layer research,
-wind energy assessment and environmental monitoring.  
+wind energy assessment and environmental monitoring. This project is for educational/learning purposes only.
 ### Key Features  
 The core functions of this software include: file format conversion, using a precise file reading and writing method, the meteorological tower of different height layers of observation data with the suffix name of .dat file
 can be merged and converted into a file with the suffix name of .netcdf. Correlation coefficient calculation, can write the correlation coefficient calculation results between two variables in the read data into the file. 
