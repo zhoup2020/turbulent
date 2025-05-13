@@ -1,0 +1,11 @@
+pandas~=2.2.2
+future~=1.0.0
+pillow~=10.4.0
+numpy~=1.26.4
+xarray~=2024.9.0
+tkcalendar~=1.6.1
+scipy~=1.14.1
+netcdf4~=1.7.1.post2
+pandastable~=0.14.0
+pycwt~=0.4.0b0
+joblib~=1.4.2
