@@ -23,3 +23,18 @@ File format problems, this software is based on meteorological tower observation
 Contact details:pzhou6804@gmail.com or zhoup2020@outlook.com  
 Author：Ping Zhou  
 Supervisor：Zhongming Gao
+## 5.Resource Usage Statement   
+Some of the icons/materials used in this project are sourced from the Pixso platform and are subject to the following terms:  
+### License  
+The material is licensed under a Creative Commons Attribution 4.0 International License (CC BY 4.0) and you are free to:  
+Share: copy and distribute the material;  
+Modify: create secondary works based on the material.    
+### Attribution requirements
+Usage must be clearly labeled:  
+Source: label the material as coming from “Pixso” (https://pixso.cn/community/file/GzF87zsI9TG7I7s2qAVnZQ); author:Kilbert   
+Link to the protocol: CC BY 4.0 protocol(https://creativecommons.org/licenses/by/4.0/deed.en);   
+### Restrictions on use  
+Pixso platform resources can only be used for learning and communication purposes, and are prohibited to be used:
+Direct commercial sales or for-profit products;Scenes not related to learning, open source, non-profit.  
+### Disclaimer
+The icons/materials in this project are not directly related to the Pixso platform, and Pixso is not responsible for their usage scenarios.
