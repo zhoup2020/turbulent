@@ -15,7 +15,7 @@ data into high and low frequency signals. Wavelet analysis, which calculates the
 Using lightweight modular design , the bottom based on Python language , to achieve low resource consumption and high operational efficiency . Support Windows/macOS/Linux platform.  
 ### Intended Users
 Researchers and data analysts with atmospheric science backgrounds, etc.
-## Frequently Asked Questions  
+## 2.Frequently Asked Questions  
 File format problems, this software is based on meteorological tower observation data research for development, did not take into account all the file reading situation. If you encounter file format problems, you can directly modify the source code.  
-## Technical Support  
+## 3.Technical Support  
 Contact details:pzhou6804@gmail.com or zhoup2020@outlook.com
