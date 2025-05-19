@@ -3,13 +3,13 @@
 ### Software Background  
 This software is a turbulence analysis tool developed based on python language, which aims to solve the problems of meteorological data format conversion,
 large-scale data analysis and tedious repetitive operations, and is suitable for the processing of observation data from gradient towers and meteorological 
-station observation data. By analyzing the observation data (including wind speed, temperature, humidity and CO2 concentration), 
+station observation data. By analyzing the observation data (`u`,`v`,`w`,`t`,`q` and `CO2`), 
 the software can decompose the turbulence signals from the data and further process them, which can provide strong technical support for the atmospheric boundary layer research,
 wind energy assessment and environmental monitoring. This project is for educational/learning purposes only.
 ### Key Features  
-The core functions of this software include: file format conversion, using a precise file reading and writing method, the meteorological tower of different height layers of observation data with the suffix name of .dat file
-can be merged and converted into a file with the suffix name of .netcdf. Correlation coefficient calculation, can write the correlation coefficient calculation results between two variables in the read data into the file. 
-Quadrant analysis, including de-sliding window averaging and calculation of statistics characterizing the coherent structure of turbulence (ΔS, CEM, ICEM, etc.). EMD decomposition of turbulent signals, which decomposes the 
+The core functions of this software include: file format conversion, using a precise file reading and writing method, the meteorological tower of different height layers of observation data with the suffix name of `.dat` file
+can be merged and converted into a file with the suffix name of `.netcdf`. Correlation coefficient calculation, can write the correlation coefficient calculation results between two variables in the read data into the file. 
+Quadrant analysis, including de-sliding window averaging and calculation of statistics characterizing the coherent structure of turbulence (`ΔS`, `CEM`, `ICEM`, etc.). EMD decomposition of turbulent signals, which decomposes the 
 data into high and low frequency signals. Wavelet analysis, which calculates the wavelet analysis results of the turbulent signals.  
 ### Technical Advantages  
 Using lightweight modular design , the bottom based on Python language , to achieve low resource consumption and high operational efficiency . Support Windows/macOS/Linux platform.  
@@ -17,6 +17,9 @@ Using lightweight modular design , the bottom based on Python language , to achi
 Researchers and data analysts with atmospheric science backgrounds, etc.  
 ## 2.Module Introduction  
 The gui_design module is used to create the GUI page, the icons module is the icon elements called in the GUI page, the test module is used to test part of the functionality of the tur_dattonc module, and the tur_dattonc module is responsible for the basic code framework for processing the data.  
+### Installation setup  
+See `requirements.txt` for details:  
+```pip install -r requirements.txt```
 ## 3.Frequently Asked Questions  
 File format problems, this software is based on meteorological tower observation data research for development, did not take into account all the file reading situation. If you encounter file format problems, you can directly modify the source code.  
 Some functions have not been fully developed, such as MOST analysis and the selection of multiple types of graphs. If users need these features, they can contact the developer for modification or make changes directly in the source code.  
