@@ -821,10 +821,7 @@ class TurbulentAnalysisApp:
     def _create_parameter_form_fit(self):
         """创建MOST拟合参数输入表单"""
         self.clear_form()
-        form_frame = self._make_scrollable_frame(self.param_frame)
-
-        parameters = [("tur1", "turbulent1", ""), ("tur2", "turbulent2", ""), ("out_path", "Save file Path:", "")]
-        self._build_form(form_frame, parameters, 'fit', start_row=len(parameters) + 1)
+        messagebox.showwarning("暂时不支持该功能，待开发")
 
     # 设置可滚动的属性输入区域
     def _make_scrollable_frame(self, parent, padding=(10, 5, 10, 5)):
