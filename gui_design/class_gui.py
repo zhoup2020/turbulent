@@ -5,6 +5,10 @@ from tkinter import ttk, messagebox, filedialog,simpledialog
 from tkinter.colorchooser import askcolor
 from PIL import Image, ImageTk
 import os
+import platform
+import subprocess
+import webbrowser
+import logging
 import numpy as np
 import pandas as pd
 import string
@@ -23,6 +27,17 @@ from Firetree import EnhancedFileTree
 from Fileviwer import EnhancedFileViewer
 from Workspace import WorkspaceViewer
 from tur_dattonc import read_single_nc, read_and_merge_ncs, read_single_csv_or_dat, read_and_merge_csvs_or_dats, wavelet_calculate,dat_nc, save_to_nc,calculate_corr,read_datfiles,high_low_freq
+
+# 设置日志文件
+LOG_FILENAME = "app.log"
+logging.basicConfig(
+    level=logging.ERROR,
+    format="%(asctime)s %(levelname)s:%(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILENAME, encoding='utf-8'),
+        logging.StreamHandler()  # optional: also print to console
+    ]
+)
 
 class TurbulentAnalysisApp:
     def __init__(self, root):
@@ -88,13 +103,13 @@ class TurbulentAnalysisApp:
             ("Explore", [
                 ("Discover", lambda: messagebox.showinfo("Explore", "Discovery mode"))
             ]),
-            ("Success", [
-                ("Metrics", self.show_metrics),
-                ("Statistics", lambda: messagebox.showinfo("Stats", "Detailed statistics"))
+            ("Log", [
+                ("Open_logs", self.open_log),
+                ("Clear_logs", self.clean_logs)
             ]),
             ("Help", [
-                ("Documentation", lambda: messagebox.showinfo("Help", "User manual")),
-                ("About", lambda: messagebox.showinfo("About", "Project 1.0\nVersion 2024"))
+                ("Documentation", self.open_documentation),
+                ("About", lambda: webbrowser.open("https://github.com/zhoup2020/turbulent"))
             ])
         ]
 
@@ -106,6 +121,60 @@ class TurbulentAnalysisApp:
                 menu.add_command(label=item_label, command=command)
 
         self.root.config(menu=menubar)
+
+    def open_otherfile(self, file_path):
+        """使用系统默认程序打开文件"""
+        try:
+            system = platform.system()
+            if system == 'Windows':
+                os.startfile(file_path)
+            elif system == 'Darwin':
+                subprocess.call(['open', file_path])
+            else:
+                subprocess.call(['xdg-open', file_path])
+        except Exception as e:
+            logging.error(f"文件打开失败: {e}")
+            messagebox.showerror("错误", f"文件打开失败，详情请查看日志")
+
+    def open_documentation(self):
+        """打开用户手册（自动检测PDF或DOCX）"""
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+        except NameError:
+            base_dir = os.getcwd()
+
+        base_name = "基于python的湍流分析工具说明"
+        extensions = [".pdf", ".docx"]
+
+        for ext in extensions:
+            file_path = os.path.join(base_dir, base_name + ext)
+            print("Looking for:", file_path)  # debug
+            if os.path.exists(file_path):
+                self.open_otherfile(file_path)
+                return
+
+        messagebox.showerror("错误", f"未找到用户手册文件\n{base_dir}")
+
+    def clean_logs(self):
+        """清空日志文件内容并记录此次操作"""
+        try:
+            # Truncate the log file
+            with open(LOG_FILENAME, 'w', encoding='utf-8'):
+                pass
+            logging.info("日志已清空")  # this goes to console handler only
+            messagebox.showinfo("清空日志", "日志文件已清空。")
+        except Exception as e:
+            logging.error(f"清空日志失败: {e}")
+            messagebox.showerror("错误", "清空日志失败，详情请查看日志。")
+
+    def open_log(self):
+        """打开日志文件"""
+        log_path = os.path.join(os.getcwd(), LOG_FILENAME)
+        if os.path.exists(log_path):
+            self.open_otherfile(log_path)
+        else:
+            logging.error("日志文件不存在，无法打开")
+            messagebox.showerror("错误", "未找到日志文件，请先生成日志后再打开。")
 
     def _create_sidebar(self):
         """创建侧边栏组件"""
