@@ -153,6 +153,7 @@ class TurbulentAnalysisApp:
                 self.open_otherfile(file_path)
                 return
 
+        logging.error("未找到用户手册文件")
         messagebox.showerror("错误", f"未找到用户手册文件\n{base_dir}")
 
     def clean_logs(self):
