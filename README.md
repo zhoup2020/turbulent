@@ -19,6 +19,7 @@ Researchers and data analysts with atmospheric science backgrounds, etc.
 The gui_design module is used to create the GUI page, the icons module is the icon elements called in the GUI page, the test module is used to test part of the functionality of the tur_dattonc module, and the tur_dattonc module is responsible for the basic code framework for processing the data.  
 ## 3.Frequently Asked Questions  
 File format problems, this software is based on meteorological tower observation data research for development, did not take into account all the file reading situation. If you encounter file format problems, you can directly modify the source code.  
+Some functions have not been fully developed, such as MOST analysis and the selection of multiple types of graphs. If users need these features, they can contact the developer for modification or make changes directly in the source code.  
 ## 4.Technical Support  
 Contact details:pzhou3162@gmail.com or zhoup2020@outlook.com  
 Author：Ping Zhou  
