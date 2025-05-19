@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import string
 import re
+import importlib.util
 import xarray as xr
 from tkcalendar import DateEntry
 from scipy.interpolate import interp1d
@@ -22,6 +23,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.font_manager as fm
 import matplotlib.colors as mpl_colors
+from plugin_base import PluginBase
 from Tooltip import Tooltip
 from Firetree import EnhancedFileTree
 from Fileviwer import EnhancedFileViewer
@@ -98,7 +100,8 @@ class TurbulentAnalysisApp:
             ]),
             ("Tools", [
                 ("Options", lambda: messagebox.showinfo("Options", "Settings panel")),
-                ("Converter", lambda: messagebox.showinfo("Converter", "Format converter"))
+                ("Plugins", self.load_plugin_dialog),
+                ("Close plugins", self.unload_all_plugins)
             ]),
             ("Explore", [
                 ("Discover", lambda: messagebox.showinfo("Explore", "Discovery mode"))
@@ -176,6 +179,51 @@ class TurbulentAnalysisApp:
         else:
             logging.error("日志文件不存在，无法打开")
             messagebox.showerror("错误", "未找到日志文件，请先生成日志后再打开。")
+
+    def load_plugin_dialog(self):
+        path = filedialog.askopenfilename(
+            title="选择插件文件", filetypes=[("Python 文件", "*.py")], initialdir=os.getcwd()
+        )
+        if not path:
+            return
+
+        name = os.path.splitext(os.path.basename(path))[0]
+        try:
+            spec = importlib.util.spec_from_file_location(name, path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except Exception as e:
+            logging.error(f"模块加载失败，Error:{e}")
+            messagebox.showerror("加载失败", f"无法导入模块：{e}")
+            return
+
+        loaded = 0
+        for attr in dir(mod):
+            cls = getattr(mod, attr)
+            if isinstance(cls, type) and issubclass(cls, PluginBase) and cls is not PluginBase:
+                inst = cls()
+                inst.activate()
+                inst.open_page(self.main_notebook)
+                self.plugins.append(inst)
+                loaded += 1
+
+        if loaded:
+            messagebox.showinfo("插件已加载", f"共加载 {loaded} 个插件")
+        else:
+            messagebox.showwarning("无效插件", "未找到插件类")
+
+    def unload_all_plugins(self):
+        for inst in self.plugins:
+            try:
+                inst.close_page()
+            except:
+                pass
+        self.plugins.clear()
+        messagebox.showinfo("插件", "所有插件已卸载")
+
+    def on_close_plugins(self):
+        self.unload_all_plugins()
+        self.root.destroy()
 
     def _create_sidebar(self):
         """创建侧边栏组件"""
