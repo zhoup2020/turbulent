@@ -1,5 +1,4 @@
-import glob
-from tur_dattonc import read_datfiles,custom_sort_key
+from tur_dattonc import read_datfiles
 import pandas as pd
 import matplotlib.pyplot as plt
 
