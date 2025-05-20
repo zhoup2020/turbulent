@@ -29,6 +29,7 @@ from Firetree import EnhancedFileTree
 from Fileviwer import EnhancedFileViewer
 from Workspace import WorkspaceViewer
 from tur_dattonc import read_single_nc, read_and_merge_ncs, read_single_csv_or_dat, read_and_merge_csvs_or_dats, wavelet_calculate,dat_nc, save_to_nc,calculate_corr,read_datfiles,high_low_freq
+from host_api import HostAPI
 
 # 设置日志文件
 LOG_FILENAME = "app.log"
@@ -50,6 +51,9 @@ class TurbulentAnalysisApp:
         # 初始化全局状态
         self.selected_files = []
         self.file_listbox = None
+        self.host_api = HostAPI(self)
+        self.plugins = {}
+
         self.form_params = {'datnc': {}, 'corr': {}, 'deltaS': {},
                             'quan': {}, 'imfs': {}, 'wavelet': {},
                             'fit': {}}
@@ -100,8 +104,7 @@ class TurbulentAnalysisApp:
             ]),
             ("Tools", [
                 ("Options", lambda: messagebox.showinfo("Options", "Settings panel")),
-                ("Plugins", self.load_plugin_dialog),
-                ("Close plugins", self.unload_all_plugins)
+                ("Plugins management", self.open_plugin_manager)
             ]),
             ("Explore", [
                 ("Discover", lambda: messagebox.showinfo("Explore", "Discovery mode"))
@@ -180,9 +183,70 @@ class TurbulentAnalysisApp:
             logging.error("日志文件不存在，无法打开")
             messagebox.showerror("错误", "未找到日志文件，请先生成日志后再打开。")
 
-    def load_plugin_dialog(self):
+    def open_plugin_manager(self):
+        if hasattr(self, "_pm_win") and self._pm_win.winfo_exists():
+            self._pm_win.lift()
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title("插件管理")
+        win.geometry("700x400")
+        win.resizable(True, True)
+        self._pm_win = win
+
+        # 用 PanedWindow 或者直接 grid 两列
+        container = ttk.Frame(win)
+        container.pack(fill="both", expand=True, padx=5, pady=5)
+        container.grid_columnconfigure(1, weight=1)
+        container.grid_rowconfigure(0, weight=1)
+
+        # 左侧：插件列表
+        lbl = ttk.Label(container, text="已加载插件：")
+        lbl.grid(row=0, column=0, sticky="nw", padx=(0,5))
+
+        lb = tk.Listbox(container, width=25,height=18)
+        lb.grid(row=1, column=0, sticky="nsew", padx=(0,5), pady=(2,0))
+        lb.bind("<<ListboxSelect>>", self._pm_on_select)
+        self._pm_listbox = lb
+
+        # 右侧：详情区
+        detail = ttk.Frame(container, relief="sunken", borderwidth=1)
+        detail.grid(row=0, column=1, rowspan=2, sticky="nsew")
+        detail.grid_columnconfigure(0, weight=1)
+        detail.grid_rowconfigure(0, weight=1)
+        self._pm_detail = detail
+
+        # 底部按钮区
+        btn_frame = ttk.Frame(win)
+        btn_frame.pack(fill="x", padx=5, pady=5)
+        ttk.Button(btn_frame, text="加载插件…", command=self._pm_load).pack(side="left")
+        ttk.Button(btn_frame, text="卸载选中", command=self._pm_unload_selected).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="关闭管理", command=win.destroy).pack(side="right")
+
+        self._pm_refresh_list()
+
+    def refresh_main_view(self):
+        """Called by plugins to tell App to redraw or update UI."""
+        # e.g. update a list, redraw canvas, etc.
+        # if you already have a helper, just call it:
+        self._refresh_display()
+
+    def _refresh_display(self):
+        # your actual UI-refresh logic here
+        for w in self.display.winfo_children():
+            w.destroy()
+        tk.Label(self.display, text="已刷新主界面", fg="blue").pack(pady=20)
+
+    def _pm_refresh_list(self):
+        lb = self._pm_listbox
+        lb.delete(0, tk.END)
+        for name in self.plugins:
+            lb.insert(tk.END, name)
+
+    def _pm_load(self):
         path = filedialog.askopenfilename(
-            title="选择插件文件", filetypes=[("Python 文件", "*.py")], initialdir=os.getcwd()
+            title="选择插件文件", filetypes=[("Python 文件", "*.py")],
+            initialdir=os.getcwd()
         )
         if not path:
             return
@@ -190,39 +254,83 @@ class TurbulentAnalysisApp:
         name = os.path.splitext(os.path.basename(path))[0]
         try:
             spec = importlib.util.spec_from_file_location(name, path)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
         except Exception as e:
-            logging.error(f"模块加载失败，Error:{e}")
-            messagebox.showerror("加载失败", f"无法导入模块：{e}")
+            messagebox.showerror("加载失败", str(e), parent=self._pm_win)
             return
 
-        loaded = 0
-        for attr in dir(mod):
-            cls = getattr(mod, attr)
+        added = 0
+        for attr in dir(module):
+            cls = getattr(module, attr)
             if isinstance(cls, type) and issubclass(cls, PluginBase) and cls is not PluginBase:
                 inst = cls()
-                inst.activate()
-                inst.open_page(self.main_notebook)
-                self.plugins.append(inst)
-                loaded += 1
+                try:
+                    inst.activate(self.host_api)
+                except Exception as err:
+                    messagebox.showerror("插件激活失败", f"{attr}: {err}", parent=self._pm_win)
+                    continue
+                display_name = getattr(inst, "name", cls.__name__)
+                self.plugins[display_name] = inst
+                added += 1
 
-        if loaded:
-            messagebox.showinfo("插件已加载", f"共加载 {loaded} 个插件")
+        if added:
+            messagebox.showinfo("插件管理", f"已加载 {added} 个插件", parent=self._pm_win)
         else:
-            messagebox.showwarning("无效插件", "未找到插件类")
+            messagebox.showwarning("插件管理", "未找到合法插件类", parent=self._pm_win)
 
-    def unload_all_plugins(self):
-        for inst in self.plugins:
+        self._pm_refresh_list()
+
+    def _pm_unload_selected(self):
+        sel = self._pm_listbox.curselection()
+        if not sel:
+            return
+        name = self._pm_listbox.get(sel[0])
+        inst = self.plugins.pop(name, None)
+        if inst:
             try:
-                inst.close_page()
+                inst.deactivate()
             except:
                 pass
-        self.plugins.clear()
-        messagebox.showinfo("插件", "所有插件已卸载")
+            messagebox.showinfo("插件管理", f"已卸载插件：{name}", parent=self._pm_win)
+        self._pm_refresh_list()
+        # 清空详情区
+        for w in self._pm_detail.winfo_children():
+            w.destroy()
 
-    def on_close_plugins(self):
-        self.unload_all_plugins()
+    def _pm_on_select(self, event):
+        sel = event.widget.curselection()
+        if not sel:
+            return
+        name = event.widget.get(sel[0])
+        inst = self.plugins.get(name)
+        if not inst:
+            return
+
+        # 清空旧内容
+        for w in self._pm_detail.winfo_children():
+            w.destroy()
+
+        # 如果插件提供了 open_page(parent, host_api) 或类似方法
+        try:
+            # 假设插件实现 open_page(parent, host_api)
+            widget = inst.open_page(self._pm_detail, self.host_api)
+            if widget:
+                widget.pack(fill="both", expand=True, padx=5, pady=5)
+        except TypeError:
+            # 如果 open_page 只接 parent
+            widget = inst.open_page(self._pm_detail)
+            if widget:
+                widget.pack(fill="both", expand=True, padx=5, pady=5)
+        except Exception as e:
+            messagebox.showerror("插件渲染失败", str(e), parent=self._pm_win)
+
+    def on_close(self):
+        for inst in list(self.plugins.values()):
+            try:
+                inst.deactivate()
+            except:
+                pass
         self.root.destroy()
 
     def _create_sidebar(self):
