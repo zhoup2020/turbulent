@@ -50,6 +50,8 @@ class TurbulentAnalysisApp:
 
         # 初始化全局状态
         self.selected_files = []
+        self.all_widgets = []
+        self.style = ttk.Style(self.root)
         self.file_listbox = None
         self.host_api = HostAPI(self)
         self.plugins = {}
@@ -95,8 +97,9 @@ class TurbulentAnalysisApp:
                 ("Zoom In", lambda: messagebox.showinfo("Zoom", "Zooming in")),
                 ("Zoom Out", lambda: messagebox.showinfo("Zoom", "Zooming out"))
             ]),
-            ("Source", [
-                ("Show Source", lambda: messagebox.showinfo("Source", "Source code"))
+            ("Theme", [
+                ("Light", lambda: self.set_light_theme()),
+                ("Dark", lambda: self.set_dark_theme())
             ]),
             ("Show Sequence", [
                 ("Sequence 1", lambda: messagebox.showinfo("Sequence", "Sequence 1 activated")),
@@ -127,6 +130,41 @@ class TurbulentAnalysisApp:
                 menu.add_command(label=item_label, command=command)
 
         self.root.config(menu=menubar)
+
+    def set_light_theme(self):
+        """日间模式：白底黑字；日志区底色灰色，标题黑色"""
+        bg, fg = "white", "black"
+        self.root.config(bg=bg)
+
+        # 更新 ttk 自定义样式
+        self.style.configure("App.TFrame", background=bg)
+        self.style.configure("App.TLabel", background=bg, foreground=fg)
+        self.style.configure("App.TButton", background=bg, foreground=fg)
+        self.style.configure("App.Treeview",
+                             background=bg, fieldbackground=bg, foreground=fg)
+
+        # 日志区：背景换成浅灰，字体保持黑色；标题黑字
+        self.stats_frame.config(style="App.TFrame")  # 保持框架同样背景
+        self.stats_text.config(bg="lightgray", fg="black")
+        self.stats_title.config(foreground="black", background="lightgray")
+
+    def set_dark_theme(self):
+        """夜间模式：黑底白字；日志区底色深灰，标题白色"""
+        bg, fg = "black", "white"
+        self.root.config(bg=bg)
+
+        self.style.configure("App.TFrame", background=bg)
+        self.style.configure("App.TLabel", background=bg, foreground=fg)
+        self.style.configure("App.TButton", background=bg, foreground=fg)
+        self.style.configure("App.Treeview",
+                             background=bg, fieldbackground=bg, foreground=fg)
+
+        # 日志区：背景深灰，字体仍黑色；标题白字
+        log_bg = "#444444"
+        self.stats_frame.config(style="App.TFrame")
+        self.stats_text.config(bg=log_bg, fg="black")
+        # ttk.Label 不支持 bg directly => 用 tk.Label 或者改 style
+        self.stats_title.config(foreground="white", background=log_bg)
 
     def open_otherfile(self, file_path):
         """使用系统默认程序打开文件"""
@@ -225,18 +263,6 @@ class TurbulentAnalysisApp:
 
         self._pm_refresh_list()
 
-    def refresh_main_view(self):
-        """Called by plugins to tell App to redraw or update UI."""
-        # e.g. update a list, redraw canvas, etc.
-        # if you already have a helper, just call it:
-        self._refresh_display()
-
-    def _refresh_display(self):
-        # your actual UI-refresh logic here
-        for w in self.display.winfo_children():
-            w.destroy()
-        tk.Label(self.display, text="已刷新主界面", fg="blue").pack(pady=20)
-
     def _pm_refresh_list(self):
         lb = self._pm_listbox
         lb.delete(0, tk.END)
@@ -319,10 +345,12 @@ class TurbulentAnalysisApp:
                 widget.pack(fill="both", expand=True, padx=5, pady=5)
         except TypeError:
             # 如果 open_page 只接 parent
+            logging.error(f"插件加载失败: {TypeError}")
             widget = inst.open_page(self._pm_detail)
             if widget:
                 widget.pack(fill="both", expand=True, padx=5, pady=5)
         except Exception as e:
+            logging.error(f"插件渲染失败: {e}")
             messagebox.showerror("插件渲染失败", str(e), parent=self._pm_win)
 
     def on_close(self):
@@ -415,7 +443,7 @@ class TurbulentAnalysisApp:
     def _create_main_area(self):
         """创建主工作区"""
         # 使用PanedWindow实现可调整分区
-        self.outer_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        self.outer_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL,style="App.TFrame")
         self.outer_paned.pack(fill=tk.BOTH, expand=True)
 
         # 左侧文件列表区域
@@ -427,11 +455,11 @@ class TurbulentAnalysisApp:
     def _create_file_panel(self):
         """创建分屏文件列表面板（上方文件列表，下方参数输入）"""
         # 主容器框架
-        file_frame = ttk.Frame(self.outer_paned, width=100)
+        file_frame = ttk.Frame(self.outer_paned, width=100, style="App.TFrame")
         file_frame.pack_propagate(False)
-
+        self.file_frame = file_frame
         # 使用垂直分割容器
-        file_paned = ttk.PanedWindow(file_frame, orient=tk.VERTICAL)
+        file_paned = ttk.PanedWindow(file_frame, orient=tk.VERTICAL, style="App.TFrame")
         file_paned.pack(fill=tk.BOTH, expand=True)
 
         # ===== 上部文件列表区域 =====
@@ -443,12 +471,12 @@ class TurbulentAnalysisApp:
         file_paned.add(self.file_tree, weight=3)  # 分配3/4空间
 
         # ===== 下部参数输入区域 =====
-        param_frame = ttk.Frame(file_paned, relief="solid", borderwidth=2)
+        param_frame = ttk.Frame(file_paned, relief="solid", borderwidth=2, style="App.TFrame")
         param_frame.pack(padx=5, pady=5, fill=tk.X)
         file_paned.add(param_frame, weight=1)  # 分配1/4空间
 
         # 参数输入标题
-        ttk.Label(param_frame, text="初始化参数", font=("Segoe UI Variable", 12)).pack(pady=5, anchor=tk.CENTER)
+        ttk.Label(param_frame, text="初始化参数", style="App.TLabel", font=("Segoe UI Variable", 12)).pack(pady=5, anchor=tk.CENTER)
         self.param_frame = param_frame
         # 参数输入表单
         self.outer_paned.add(file_frame, weight=1)
@@ -494,7 +522,7 @@ class TurbulentAnalysisApp:
         option_row = start_row + len(parameters)
         btn_frame = ttk.Frame(form_frame)
         btn_frame.grid(row=start_row + len(parameters) + 1, column=0, columnspan=2, pady=10)
-        ttk.Button(btn_frame, text="合并dat文件保存为nc文件", command=self._create_collect_datncparameter).pack(
+        ttk.Button(btn_frame, text="合并dat文件保存为nc文件", command=self._create_collect_datncparameter, style="App.TButton").pack(
             side=tk.LEFT, padx=5)
 
     def _create_collect_datncparameter(self):
@@ -523,10 +551,12 @@ class TurbulentAnalysisApp:
             self.run_analysis('dat_nc', time0, time1)
 
         except ValueError as e:
+            logging.error(f"初始信息输入错误: {e}")
             messagebox.showerror("输入错误", f"数值转换失败: {e}")
             time1 = time.time()
             self.run_analysis('dat_nc', time0, time1, e)
         except Exception as e:
+            logging.error(f"保存参数失败: {e}")
             messagebox.showerror("错误", f"保存参数失败: {e}")
             time1 = time.time()
             self.run_analysis('dat_nc', time0, time1, e)
@@ -589,10 +619,12 @@ class TurbulentAnalysisApp:
                 time1 = time.time()
                 self.run_analysis('calculate_corr', time0, time1)
         except ValueError as e:
+            logging.error(f"初始信息输入失败: {e}")
             messagebox.showerror("输入错误", f"数值转换失败: {e}")
             time1 = time.time()
             self.run_analysis('calculate_corr', time0, time1, e)
         except Exception as e:
+            logging.error(f"初始参数设置失败: {e}")
             messagebox.showerror("错误", f"设置参数失败: {e}")
             time1 = time.time()
             self.run_analysis('calculate_corr', time0, time1, e)
@@ -615,6 +647,7 @@ class TurbulentAnalysisApp:
             else:
                 messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
         except Exception as e:
+            logging.error(f"文件保存失败: {e}")
             messagebox.showerror("保存失败", str(e))
             return
 
@@ -650,6 +683,7 @@ class TurbulentAnalysisApp:
             self.params['deltaS'] = params
         except AttributeError as e:
             time1 = time.time()
+            logging.error(f"计算ΔS打开失败: {e}")
             self.run_analysis('calculate_ΔS', time0, time1, e)
             pass
 
@@ -662,6 +696,7 @@ class TurbulentAnalysisApp:
             self.run_analysis('calculate_ΔS', time0, time1)
         except Exception as e:
             time1 = time.time()
+            logging.error(f"计算ΔS失败: {e}")
             self.run_analysis('calculate_ΔS', time0, time1, e)
 
     def _create_save_deltaSfile(self, out_path, fmt):
@@ -689,6 +724,7 @@ class TurbulentAnalysisApp:
             else:
                 messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
         except Exception as e:
+            logging.error(f"文件保存失败: {e}")
             messagebox.showerror("保存失败", str(e))
             return
 
@@ -744,6 +780,7 @@ class TurbulentAnalysisApp:
             self.run_analysis('save_' + task_name, time0, time1)
         except Exception as e:
             time1 = time.time()
+            logging.error(f"文件保存失败: {e}")
             tk.messagebox.showerror("保存失败", str(e))
             self.run_analysis('save_' + task_name, time0, time1, e)
 
@@ -776,6 +813,7 @@ class TurbulentAnalysisApp:
             self.params['quan'] = params
         except AttributeError as e:
             time1 = time.time()
+            logging.error(f"象限分析计算失败: {e}")
             self.run_analysis('calculate_quan', time0, time1, e)
             pass
 
@@ -811,6 +849,7 @@ class TurbulentAnalysisApp:
             self.run_analysis('calculate_quan', time0, time1)
         except Exception as e:
             time1 = time.time()
+            logging.error(f"象限分析计算失败: {e}")
             self.run_analysis('calculate_quan', time0, time1, e)
 
     def _create_save_quanfile(self, out_path, fmt):
@@ -839,6 +878,7 @@ class TurbulentAnalysisApp:
                 messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
         except Exception as e:
             time1 = time.time()
+            logging.error(f"文件保存失败: {e}")
             messagebox.showerror("保存失败", str(e))
             self.run_analysis('save_quan', time0, time1, e)
             return
@@ -879,6 +919,7 @@ class TurbulentAnalysisApp:
             self.params['imfs'] = params
         except AttributeError as e:
             time1 = time.time()
+            logging.error(f"EMD分解计算失败: {e}")
             self.run_analysis('calculate_imfs', time0, time1, e)
             pass
 
@@ -893,6 +934,7 @@ class TurbulentAnalysisApp:
             self.run_analysis('calculate_imfs', time0, time1)
         except Exception as e:
             time1 = time.time()
+            logging.error(f"EMD分解计算失败: {e}")
             self.run_analysis('calculate_imfs', time0, time1, e)
 
     def _create_save_imfsfile(self, out_path, fmt):
@@ -919,6 +961,7 @@ class TurbulentAnalysisApp:
             else:
                 messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
         except Exception as e:
+            logging.error(f"文件保存失败: {e}")
             messagebox.showerror("保存失败", str(e))
             return
 
@@ -952,6 +995,7 @@ class TurbulentAnalysisApp:
             self.params['wavelet'] = params
         except AttributeError as e:
             time1 = time.time()
+            logging.error(f"小波分析计算失败: {e}")
             self.run_analysis('calculate_wavelet', time0, time1, e)
             pass
 
@@ -1025,6 +1069,7 @@ class TurbulentAnalysisApp:
             self.run_analysis('calculate_wavelet', time0, time1)
         except Exception as e:
             time1 = time.time()
+            logging.error(f"小波分析计算失败: {e}")
             self.run_analysis('calculate_wavelet', time0, time1, e)
 
     def _create_save_waveletfile(self, out_path, fmt):
@@ -1041,6 +1086,7 @@ class TurbulentAnalysisApp:
             else:
                 messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
         except Exception as e:
+            logging.error(f"文件保存失败: {e}")
             messagebox.showerror("保存失败", str(e))
             return
 
@@ -1121,9 +1167,9 @@ class TurbulentAnalysisApp:
         # 按钮区也放在 start_row + len(parameters)
         btn_frame = ttk.Frame(form_frame)
         btn_frame.grid(row=start_row + len(parameters) + 1, column=0, columnspan=2, pady=10)
-        ttk.Button(btn_frame, text="计算", command=command1).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="保存文件", command=command2).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="绘图", command=command3).pack(side=tk.LEFT)
+        ttk.Button(btn_frame, text="计算", command=command1, style="App.TButton").pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="保存文件", command=command2, style="App.TButton").pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="绘图", command=command3, style="App.TButton").pack(side=tk.LEFT)
 
     # 文件夹选择
     def _browse_directory(self, target_var: tk.StringVar):
@@ -1139,24 +1185,25 @@ class TurbulentAnalysisApp:
 
     def _create_analysis_panel(self):
         """创建分析显示面板"""
-        analysis_paned = ttk.PanedWindow(self.outer_paned, orient=tk.VERTICAL)
+        analysis_paned = ttk.PanedWindow(self.outer_paned, orient=tk.VERTICAL,style="App.TFrame")
 
         # 可视化分析区
         # ===== 可视化分析区 =====
-        self.viz_frame = ttk.Frame(analysis_paned)
+        self.viz_frame = ttk.Frame(analysis_paned, style="App.TFrame")
 
-        # 创建Matplotlib画布
-        self.fig = Figure(figsize=(6, 4), dpi=100)
+        ttk.Label(self.viz_frame, text="可视化区域", font=("Segoe UI", 14),style="App.TLabel").pack(padx=10, pady=10)
 
-        # 嵌入Tkinter
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.viz_frame)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # 添加工具栏
-        self.toolbar = NavigationToolbar2Tk(self.canvas, self.viz_frame)
-        self.toolbar.update()
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        # self.fig = Figure(figsize=(6, 4), dpi=100)
+        #
+        # # 嵌入Tkinter
+        # self.canvas = FigureCanvasTkAgg(self.fig, master=self.viz_frame)
+        # self.canvas.draw()
+        # self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        #
+        # # 添加工具栏
+        # self.toolbar = NavigationToolbar2Tk(self.canvas, self.viz_frame)
+        # self.toolbar.update()
+        # self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
         analysis_paned.add(self.viz_frame, weight=4)  # 占80%高度
         # 统计信息区
@@ -1168,6 +1215,8 @@ class TurbulentAnalysisApp:
         # 区块标题
         title = ttk.Label(stats_frame, text="任务日志", anchor='center', font=("Segoe UI Variable", 12))
         title.pack(fill=tk.X, padx=5, pady=(5, 0))
+        self.stats_frame = stats_frame
+        self.stats_title = title
 
         # 日志文本 + 滚动条
         self.stats_text = tk.Text(
@@ -1512,6 +1561,7 @@ class TurbulentAnalysisApp:
             return
 
         # 清除旧图形
+        self._create_fig()
         self.fig.clf()
         plt.style.use(settings['drawing_style'])
         plt.rcParams['figure.dpi'] = settings['dpi']
@@ -1749,6 +1799,7 @@ class TurbulentAnalysisApp:
             return
 
         # 清除旧图形
+        self._create_fig()
         self.fig.clf()
         plt.style.use(settings['drawing_style'])
         plt.rcParams['figure.dpi'] = settings['dpi']
@@ -1943,6 +1994,7 @@ class TurbulentAnalysisApp:
             return
 
         # 清除旧图形
+        self._create_fig()
         self.fig.clf()
         plt.style.use(settings['drawing_style'])
         plt.rcParams['figure.dpi'] = settings['dpi']
@@ -2239,6 +2291,7 @@ class TurbulentAnalysisApp:
             return
 
         # 清除旧图形
+        self._create_fig()
         self.fig.clf()
         plt.style.use(settings['drawing_style'])
         plt.rcParams['figure.dpi'] = settings['dpi']
@@ -2535,6 +2588,7 @@ class TurbulentAnalysisApp:
             return
 
         # 清除旧图形
+        self._create_fig()
         self.fig.clf()
         plt.style.use(settings['drawing_style'])
         plt.rcParams['figure.dpi'] = settings['dpi']
@@ -2592,14 +2646,32 @@ class TurbulentAnalysisApp:
         # 强制刷新画布显示新图形
         self.canvas.draw()
 
-    # 新增的MOST绘图设置
+    def _create_fig(self):
+        # 检查是否已存在画布
+        if hasattr(self, 'fig') and self.fig is not None:
+            # 如果存在则直接使用现有画布
+            self.canvas.draw_idle()  # 刷新现有画布
+            return
+
+        # 创建Matplotlib画布
+        self.fig = Figure(figsize=(6, 4), dpi=100)
+
+        # 嵌入Tkinter
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.viz_frame)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # 添加工具栏
+        self.toolbar = NavigationToolbar2Tk(self.canvas, self.viz_frame)
+        self.toolbar.update()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
 
     # 打开工作区
     def on_click_workspace(self, task_info):
         viewer = WorkspaceViewer(self.root)
         viewer.update_workspace(self.plot_data[task_info])
         viewer.show()
-
 
 if __name__ == "__main__":
     root = tk.Tk()
