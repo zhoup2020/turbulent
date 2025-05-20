@@ -3,8 +3,7 @@ from tur_dattonc import read_datfiles,custom_sort_key
 import pandas as pd
 import matplotlib.pyplot as plt
 
-paths = glob.glob( 'G:/inldata/ecdata/*')
-paths = sorted(paths, key=custom_sort_key, reverse=True)  # Folders are sorted from lowest to highest, from C1 to A4
+paths = 'G:/inldata/ecdata/*'
 deltaS_dataframe, CEM_dataframe, ICEM_dataframe = read_datfiles(paths, 0,'2021-04-27', '2021-04-28',
                                                                     '10:00:00','16:00:00',
                                                                     ['2021-05-06', '2021-05-07', '2021-06-07',

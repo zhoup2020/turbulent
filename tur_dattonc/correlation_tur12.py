@@ -26,5 +26,5 @@ def calculate_corr(tur1,tur2,time_seg):
     combined = pd.concat({"tur1": tur1, "tur2": tur2}, axis=1)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=RuntimeWarning)
-        corr_results = combined.resample("30min").apply(safe_correlation).dropna()
+        corr_results = combined.resample(time_seg).apply(safe_correlation).dropna()
     return corr_results
