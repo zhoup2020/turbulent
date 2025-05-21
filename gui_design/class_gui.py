@@ -27,7 +27,7 @@ import matplotlib.font_manager as fm
 import matplotlib.colors as mpl_colors
 from plugin_base import PluginBase
 from Tooltip import Tooltip
-from Firetree import EnhancedFileTree
+from Filetree import EnhancedFileTree
 from Fileviwer import EnhancedFileViewer
 from Workspace import WorkspaceViewer
 from tur_dattonc import read_single_nc, read_and_merge_ncs, read_single_csv_or_dat, read_and_merge_csvs_or_dats, wavelet_calculate,dat_nc, calculate_corr,read_datfiles,high_low_freq
@@ -2627,7 +2627,7 @@ class TurbulentAnalysisApp:
             # 绑定点击事件
             color_bar.bind(
                 "<Button-1>",
-                lambda event, cmap_name=cmap_name: self.choose_color(cmap_name)
+                lambda event, name=cmap_name: self.choose_color(name)
             )
 
             # 更新行列索引
@@ -2681,7 +2681,7 @@ class TurbulentAnalysisApp:
             # 在第一个子图绘制
             self._plot_to_axis_wavelet(self.axes, settings)
             # 调整布局并刷新
-            self.fig.tight_layout()
+            # self.fig.tight_layout()
             self.canvas.draw()
             time1 = time.time()
             self.run_analysis(''.join(['draw_', task_name]), time0, time1)

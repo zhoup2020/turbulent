@@ -149,7 +149,7 @@ class EnhancedFileTree(ttk.Frame):
         if self.open_callback:
             self.open_callback(path)
         else:
-            from enhanced_viewer import EnhancedFileViewer
+            from Fileviwer import EnhancedFileViewer
             EnhancedFileViewer(self.master, embed=False).load_file(path)
 
     def open_selected(self):
