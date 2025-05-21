@@ -19,6 +19,8 @@ from tkcalendar import DateEntry
 from scipy.interpolate import interp1d
 from scipy.stats import gaussian_kde
 import matplotlib.pyplot as plt
+import threading
+import queue
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.font_manager as fm
@@ -28,7 +30,7 @@ from Tooltip import Tooltip
 from Firetree import EnhancedFileTree
 from Fileviwer import EnhancedFileViewer
 from Workspace import WorkspaceViewer
-from tur_dattonc import read_single_nc, read_and_merge_ncs, read_single_csv_or_dat, read_and_merge_csvs_or_dats, wavelet_calculate,dat_nc, save_to_nc,calculate_corr,read_datfiles,high_low_freq
+from tur_dattonc import read_single_nc, read_and_merge_ncs, read_single_csv_or_dat, read_and_merge_csvs_or_dats, wavelet_calculate,dat_nc, calculate_corr,read_datfiles,high_low_freq
 from host_api import HostAPI
 
 # 设置日志文件
@@ -71,6 +73,27 @@ class TurbulentAnalysisApp:
         self._create_sidebar()
         self._create_main_area()
         self._create_status_bar()
+
+        # 线程间通信队列
+        self.task_queue = queue.Queue()
+
+        # 启动定时检查队列的循环
+        self.root.after(100, self.process_queue)
+
+    def process_queue(self):
+        """
+        定时在主线程检查 task_queue，将子线程的消息更新到 UI。
+        使用 after() 保证在主线程安全地调用。
+        """
+        try:
+            while True:
+                msg = self.task_queue.get_nowait()
+                # 更新状态标签
+                self.root.after(500, lambda: self.status_bar.config(text=f"{msg}"))
+        except queue.Empty:
+            pass
+        # 每 100 ms 继续检查
+        self.root.after(100, self.process_queue)
 
     def _create_menu(self):
         """创建菜单系统"""
@@ -522,12 +545,19 @@ class TurbulentAnalysisApp:
         option_row = start_row + len(parameters)
         btn_frame = ttk.Frame(form_frame)
         btn_frame.grid(row=start_row + len(parameters) + 1, column=0, columnspan=2, pady=10)
-        ttk.Button(btn_frame, text="合并dat文件保存为nc文件", command=self._create_collect_datncparameter, style="App.TButton").pack(
+        ttk.Button(btn_frame, text="合并dat文件保存为nc文件", command=self.start_collect_datnc, style="App.TButton").pack(
             side=tk.LEFT, padx=5)
+
+    def start_collect_datnc(self):
+        # 创建多线程
+        self.status_bar.config(text=f"Calculate task progressing…")
+        threading.Thread(target=self._create_collect_datncparameter, args=(), daemon=True).start()
 
     def _create_collect_datncparameter(self):
         """应用datnc参数到类变量"""
         time0 = time.time()
+        now = datetime.now().strftime('%H:%M:%S')
+        self.log(now,'Task dat to nc start')
         try:
             params_collect = self.form_params['datnc']
             params = {}
@@ -548,18 +578,21 @@ class TurbulentAnalysisApp:
                    params['t_step'], params["vars"],
                    params["h"], params["out_path"])
             time1 = time.time()
-            self.run_analysis('dat_nc', time0, time1)
+            self.run_analysis('dat to nc', time0, time1)
+            self.task_queue.put(f"Calculate and save nc file done")
 
         except ValueError as e:
             logging.error(f"初始信息输入错误: {e}")
             messagebox.showerror("输入错误", f"数值转换失败: {e}")
             time1 = time.time()
             self.run_analysis('dat_nc', time0, time1, e)
+            self.task_queue.put(f"Calculate and save nc file undone")
         except Exception as e:
             logging.error(f"保存参数失败: {e}")
             messagebox.showerror("错误", f"保存参数失败: {e}")
             time1 = time.time()
             self.run_analysis('dat_nc', time0, time1, e)
+            self.task_queue.put(f"Calculate and save nc file undone")
 
     def _create_parameter_form_corr(self):
         """创建计算相关系数参数输入表单"""
@@ -573,12 +606,19 @@ class TurbulentAnalysisApp:
 
         # 将表单从第 len(parameters)+1 行开始生成
         self._build_form(form_frame, parameters, 'corr', start_row=len(parameters) + 1,
-                         command1=self._create_collect_corrparameter,
+                         command1=self.start_collect_corr,
                          command2=lambda: self.on_save('corr'), command3=lambda: self.show_plot_corr_settings('corr'))
 
-    def _create_collect_corrparameter(self):
+    def start_collect_corr(self):
+        # 创建多线程
+        self.status_bar.config(text=f"Calculate task progressing…")
+        threading.Thread(target=self._create_collect_corr, args=(), daemon=True).start()
+
+    def _create_collect_corr(self):
         """应用相关系数变量到类变量"""
         time0 = time.time()
+        now = datetime.now().strftime('%H:%M:%S')
+        self.log(now, 'Task calculate corr start')
         try:
             params_collect = self.form_params['corr']
             params = {}
@@ -602,32 +642,38 @@ class TurbulentAnalysisApp:
                         print(data1)
                     elif file.endswith('.csv') or file.endswith('.dat'):
                         # 单个 CSV 或 DAT 文件，直接读取
-                        data = read_single_csv_or_dat(file)
+                        df = read_single_csv_or_dat(file)
+                        data1,data2 = df['tur1'],df['tur2']
                     else:
                         raise ValueError("不支持的文件格式")
                 else:
                     if all(f.endswith('.nc') for f in self.selected_files):
                         # 多个 nc 文件，合并后读取
-                        data = read_and_merge_ncs(self.selected_files)
+                        df = read_and_merge_ncs(self.selected_files)
+                        data1, data2 = df['tur1'], df['tur2']
                     elif all(f.endswith('.csv') or f.endswith('.dat') for f in self.selected_files):
                         # 多个 CSV 或 DAT 文件，合并后读取
-                        data = read_and_merge_csvs_or_dats(self.selected_files)
+                        df = read_and_merge_csvs_or_dats(self.selected_files)
+                        data1, data2 = df['tur1'], df['tur2']
                     else:
                         raise ValueError("不支持混合格式文件")
                 corr = calculate_corr(data1, data2, params["time_seg"])
                 self.plot_data['corr'] = {'corr': corr, 'uf': uf}
-                time1 = time.time()
-                self.run_analysis('calculate_corr', time0, time1)
+            time1 = time.time()
+            self.run_analysis('calculate corr', time0, time1)
+            self.task_queue.put(f"Calculate corr done")
         except ValueError as e:
             logging.error(f"初始信息输入失败: {e}")
             messagebox.showerror("输入错误", f"数值转换失败: {e}")
             time1 = time.time()
-            self.run_analysis('calculate_corr', time0, time1, e)
+            self.run_analysis('calculate corr', time0, time1, e)
+            self.task_queue.put(f"Calculate corr undone")
         except Exception as e:
             logging.error(f"初始参数设置失败: {e}")
             messagebox.showerror("错误", f"设置参数失败: {e}")
             time1 = time.time()
-            self.run_analysis('calculate_corr', time0, time1, e)
+            self.run_analysis('calculate corr', time0, time1, e)
+            self.task_queue.put(f"Calculate corr undone")
 
     def _create_save_corrfile(self, out_path, fmt):
         df = self.plot_data['corr']['corr']
@@ -664,11 +710,18 @@ class TurbulentAnalysisApp:
                       ("timestep", "Timestep (s):", ""),
                       ("d_exclude", "Exclude date:", ""),
                       ("vars", "Variabel name:", ""), ("height", "Height (m):", "")]
-        self._build_form(form_frame, parameters, 'deltaS', start_row=0, command1=self._create_collect_deltaSparameter,
+        self._build_form(form_frame, parameters, 'deltaS', start_row=0, command1=self.start_collect_deltaS,
                          command2=lambda: self.on_save("deltaS"), command3=lambda: self.show_plot_ds_settings("deltaS"))
+
+    def start_collect_deltaS(self):
+        # 创建多线程
+        self.status_bar.config(text=f"Calculate task progressing…")
+        threading.Thread(target=self._create_collect_deltaSparameter, args=(), daemon=True).start()
 
     def _create_collect_deltaSparameter(self):
         time0 = time.time()
+        now = datetime.now().strftime('%H:%M:%S')
+        self.log(now, 'Task calculate ΔS start')
         try:
             params_collect = self.form_params['deltaS']
             params = {}
@@ -684,7 +737,7 @@ class TurbulentAnalysisApp:
         except AttributeError as e:
             time1 = time.time()
             logging.error(f"计算ΔS打开失败: {e}")
-            self.run_analysis('calculate_ΔS', time0, time1, e)
+            self.run_analysis('calculate ΔS', time0, time1, e)
             pass
 
         try:
@@ -693,11 +746,13 @@ class TurbulentAnalysisApp:
                                           params['d_exclude'], params['vars'], params['height'])
             self.plot_data['deltaS'] = {'deltaS': ds, 'CEM': cem, 'ICEM': icem}
             time1 = time.time()
-            self.run_analysis('calculate_ΔS', time0, time1)
+            self.task_queue.put(f"Calculate ΔS done")
+            self.run_analysis('calculate ΔS', time0, time1)
         except Exception as e:
             time1 = time.time()
             logging.error(f"计算ΔS失败: {e}")
-            self.run_analysis('calculate_ΔS', time0, time1, e)
+            self.task_queue.put(f"Calculate ΔS undone")
+            self.run_analysis('calculate ΔS', time0, time1, e)
 
     def _create_save_deltaSfile(self, out_path, fmt):
         try:
@@ -729,7 +784,6 @@ class TurbulentAnalysisApp:
             return
 
     def on_save(self, task_name):
-        time0 = time.time()
         file_path = filedialog.asksaveasfilename(
             title="保存文件",
             initialdir=".",
@@ -748,6 +802,9 @@ class TurbulentAnalysisApp:
         base, ext = os.path.splitext(file_path)
         ext = ext.lower()
 
+        time0 = time.time()
+        now = datetime.now().strftime('%H:%M:%S')
+        self.log(now, f'Task save {task_name} start')
         try:
             if task_name == "corr":
                 self._create_save_corrfile(file_path, ext)
@@ -782,7 +839,7 @@ class TurbulentAnalysisApp:
             time1 = time.time()
             logging.error(f"文件保存失败: {e}")
             tk.messagebox.showerror("保存失败", str(e))
-            self.run_analysis('save_' + task_name, time0, time1, e)
+            self.run_analysis('save ' + task_name, time0, time1, e)
 
     def _create_parameter_form_quan(self):
         """创建deltaS参数输入表单"""
@@ -795,11 +852,18 @@ class TurbulentAnalysisApp:
                       ("end_time", "End datetime(YY-MM-DD HH:mm:SS):", ""),
                       ("timestep", "Timestep:", "")]
         self._build_form(form_frame, parameters, 'quan', start_row=len(parameters) + 1,
-                         command1=self._create_collect_quanparameter,
+                         command1=self.start_collect_quan,
                          command2=lambda: self.on_save('quan'), command3=lambda: self.show_plot_quan_settings('quan'))
+
+    def start_collect_quan(self):
+        # 创建多线程
+        self.status_bar.config(text=f"Calculate task progressing…")
+        threading.Thread(target=self._create_collect_quanparameter, args=(), daemon=True).start()
 
     def _create_collect_quanparameter(self):
         time0 = time.time()
+        now = datetime.now().strftime('%H:%M:%S')
+        self.log(now, 'Task calculate quadrant start')
         try:
             params_collect = self.form_params['quan']
             params = {}
@@ -814,7 +878,7 @@ class TurbulentAnalysisApp:
         except AttributeError as e:
             time1 = time.time()
             logging.error(f"象限分析计算失败: {e}")
-            self.run_analysis('calculate_quan', time0, time1, e)
+            self.run_analysis('calculate quadrant', time0, time1, e)
             pass
 
         try:
@@ -846,14 +910,15 @@ class TurbulentAnalysisApp:
             self.plot_data['quan'].update({column + "_std": df_tur[column].groupby(
                 pd.Grouper(freq=params["time_seg"])).transform(lambda x: x.std(ddof=0)) for column in df_tur.columns})
             time1 = time.time()
-            self.run_analysis('calculate_quan', time0, time1)
+            self.run_analysis('calculate quadrant', time0, time1)
+            self.task_queue.put(f"Calculate quadrant done")
         except Exception as e:
             time1 = time.time()
             logging.error(f"象限分析计算失败: {e}")
-            self.run_analysis('calculate_quan', time0, time1, e)
+            self.run_analysis('calculate quadrant', time0, time1, e)
+            self.task_queue.put(f"Calculate quadrant undone")
 
     def _create_save_quanfile(self, out_path, fmt):
-        time0 = time.time()
         try:
             data = self.plot_data['quan']
             dict_df = {}
@@ -877,10 +942,8 @@ class TurbulentAnalysisApp:
             else:
                 messagebox.showwarning("未知格式", f"不支持的文件后缀：{fmt}")
         except Exception as e:
-            time1 = time.time()
             logging.error(f"文件保存失败: {e}")
             messagebox.showerror("保存失败", str(e))
-            self.run_analysis('save_quan', time0, time1, e)
             return
 
     def _create_parameter_form_imfs(self):
@@ -899,11 +962,18 @@ class TurbulentAnalysisApp:
                       ("threshold", "Freq threshold:", ""),
                       ("vars", "Variabel name:", ""), ("height", "Height (m):", "")]
         self._build_form(form_frame, parameters, 'imfs', start_row=len(parameters) + 1,
-                         command1=self._create_collect_imfsparameter,
+                         command1=self.start_collect_imfs,
                          command2=lambda: self.on_save('imfs'), command3=lambda: self.show_plot_emd_settings('imfs'))
+
+    def start_collect_imfs(self):
+        # 创建多线程
+        self.status_bar.config(text=f"Calculate task progressing…")
+        threading.Thread(target=self._create_collect_imfsparameter, args=(), daemon=True).start()
 
     def _create_collect_imfsparameter(self):
         time0 = time.time()
+        now = datetime.now().strftime('%H:%M:%S')
+        self.log(now, 'Task calculate emd start')
         try:
             params_collect = self.form_params['imfs']
             params = {}
@@ -920,7 +990,7 @@ class TurbulentAnalysisApp:
         except AttributeError as e:
             time1 = time.time()
             logging.error(f"EMD分解计算失败: {e}")
-            self.run_analysis('calculate_imfs', time0, time1, e)
+            self.run_analysis('calculate emd', time0, time1, e)
             pass
 
         try:
@@ -931,11 +1001,13 @@ class TurbulentAnalysisApp:
                                                                       params['height'], params['threshold'])
             self.plot_data['imfs'].update({'w_high': w_small, 'w_low': w_large, 't_high': t_small, 't_low': t_large})
             time1 = time.time()
-            self.run_analysis('calculate_imfs', time0, time1)
+            self.run_analysis('calculate emd', time0, time1)
+            self.task_queue.put(f"Calculate emd done")
         except Exception as e:
             time1 = time.time()
             logging.error(f"EMD分解计算失败: {e}")
-            self.run_analysis('calculate_imfs', time0, time1, e)
+            self.run_analysis('calculate emd', time0, time1, e)
+            self.task_queue.put(f"Calculate emd undone")
 
     def _create_save_imfsfile(self, out_path, fmt):
         try:
@@ -976,12 +1048,19 @@ class TurbulentAnalysisApp:
                       ('index2', 'Ending Index:', ""),
                       ("scale_res", "Scale resolution:", ""), ("n_scales", "Scales number:", "")]
         self._build_form(form_frame, parameters, 'wavelet', start_row=len(parameters) + 1,
-                         command1=self._create_collect_waveletparameter,
+                         command1=self.start_collect_wavelet,
                          command2=lambda: self.on_save("wavelet"),
                          command3=lambda: self.show_plot_wavelet_settings('wavelet'))
 
+    def start_collect_wavelet(self):
+        # 创建多线程
+        self.status_bar.config(text=f"Calculate task progressing…")
+        threading.Thread(target=self._create_collect_waveletparameter, args=(), daemon=True).start()
+
     def _create_collect_waveletparameter(self):
         time0 = time.time()
+        now = datetime.now().strftime('%H:%M:%S')
+        self.log(now, 'Task calculate wavelet start')
         try:
             params_collect = self.form_params['wavelet']
             params = {}
@@ -996,7 +1075,7 @@ class TurbulentAnalysisApp:
         except AttributeError as e:
             time1 = time.time()
             logging.error(f"小波分析计算失败: {e}")
-            self.run_analysis('calculate_wavelet', time0, time1, e)
+            self.run_analysis('calculate wavelet', time0, time1, e)
             pass
 
         def extract_floats(s):
@@ -1067,10 +1146,12 @@ class TurbulentAnalysisApp:
             self.plot_data['wavelet'].update({'wavelet_result': wavelet_result})
             time1 = time.time()
             self.run_analysis('calculate_wavelet', time0, time1)
+            self.task_queue.put(f"Calculate wavelet done")
         except Exception as e:
             time1 = time.time()
             logging.error(f"小波分析计算失败: {e}")
-            self.run_analysis('calculate_wavelet', time0, time1, e)
+            self.run_analysis('calculate wavelet', time0, time1, e)
+            self.task_queue.put(f"Calculate wavelet undone")
 
     def _create_save_waveletfile(self, out_path, fmt):
         try:
@@ -1239,9 +1320,8 @@ class TurbulentAnalysisApp:
         vsb.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 5), pady=5)
         self.stats_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
 
-    def log(self, message: str, color: str = "green"):
+    def log(self, now, message: str, color: str = "green"):
         """向统计信息区追加一条带时间戳的日志"""
-        now = datetime.now().strftime('%H:%M:%S')
         entry = f"[{now} turbulent analysis] {message}\n"
         self.stats_text.configure(state=tk.NORMAL)
         self.stats_text.insert(tk.END, entry, color)
@@ -1250,12 +1330,12 @@ class TurbulentAnalysisApp:
 
     # 示例：分析任务启动与结束时调用
     def run_analysis(self, task_info, t0: float, t1: float, e=None):
-        self.log(f"任务 {task_info} 开始")
+        now = datetime.now().strftime('%H:%M:%S')
         elapsed = t1 - t0
         if e is None:
-            self.log(f"任务 {task_info} 完成，耗时 {elapsed / 60:.2f} min", "green")
+            self.log(now,f"Task {task_info} accomplished，elapsed {elapsed / 60:.2f} minutes", "green")
         else:
-            self.log(f"任务 {task_info} 未完成，Error:{e}， 耗时 {elapsed / 60:.2f} min", "red")
+            self.log(now,f"Task {task_info} unaccomplished ,Error:{e}， elapsed {elapsed / 60:.2f} minutes", "red")
 
     def _create_status_bar(self):
         """创建状态栏"""
@@ -2665,7 +2745,6 @@ class TurbulentAnalysisApp:
         self.toolbar = NavigationToolbar2Tk(self.canvas, self.viz_frame)
         self.toolbar.update()
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
 
     # 打开工作区
     def on_click_workspace(self, task_info):

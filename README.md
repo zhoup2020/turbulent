@@ -21,8 +21,11 @@ The gui_design module is used to create the GUI page, the icons module is the ic
 See `requirements.txt` for details:  
 ```pip install -r requirements.txt```
 ## 3.Frequently Asked Questions  
+File loading problem, because some of the functional objects have the difference between individual files and folders, so some of the functions have the difference of loading files. Users may be confused between loading files and populating file paths when using the feature.  
 File format problems, this software is based on meteorological tower observation data research for development, did not take into account all the file reading situation. If you encounter file format problems, you can directly modify the source code.  
 Some functions have not been fully developed, such as MOST analysis and the selection of multiple types of graphs. If users need these features, they can contact the developer for modification or make changes directly in the source code.  
+For the development of plug-ins, the software only opens the API interface (defined in the source code `gui_design/host_api`) to the existing files and calculation result data. The creation of plugins must strictly follow the format defined in the source code (see `gui_design/plugin_base.py`).  
+Log file memory problem, with the increase of user's usage time, the storage space occupied by the log file will gradually become larger. Users can use the `clean_logs` function under the `Log` option in the menu bar to clear or directly delete the log file app.log.  
 ## 4.Technical Support  
 Contact details:pzhou3162@gmail.com or zhoup2020@outlook.com  
 Author：Ping Zhou  
